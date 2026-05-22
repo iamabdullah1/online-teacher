@@ -1,0 +1,11 @@
+.env
+# Added by code-review-graph
+.code-review-graph/
+
+__pycache__/
+*.pyc
+data/uploads/*
+data/processed/*
+.pytest_cache/
+.testsprite/
+htmlcov/
