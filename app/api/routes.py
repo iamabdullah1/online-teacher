@@ -6,12 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from app.ingestion.ingestion_pipeline import ingest_pdf
 from app.retrieval.retriever import retrieve, retrieve_text_only
 from app.generation.generator import generate_answer, generate_answer_stream
+from app.generation.slide_generator import generate_slides
 from app.ingestion.qdrant_client import _get_client
 
 UPLOADS_DIR = Path("data/uploads")
@@ -47,6 +48,28 @@ class IngestResponse(BaseModel):
     visual_vectors_stored: int
     status: str
     error: str | None
+
+
+class SlideRequest(BaseModel):
+    """Request model for slide generation."""
+    source_pdf: str
+    num_slides: int = 10
+    bullets_per_slide: int = 4
+    depth: str = "detailed"
+    topic_focus: str = "all"
+    style: str = "academic"
+    include_title_slide: bool = True
+    include_summary_slide: bool = True
+
+
+class SlideResponse(BaseModel):
+    """Response model for slide generation."""
+    file_path: str
+    num_slides: int
+    topics: list[str]
+    status: str
+    error: str | None
+    download_url: str | None
 
 
 @router.post("/upload", response_model=IngestResponse)
@@ -167,3 +190,77 @@ async def list_collections() -> dict[str, Any]:
         return {"collections": result}
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+@router.post("/generate/slides", response_model=SlideResponse)
+async def generate_slides_endpoint(request: SlideRequest):
+    """Generate a PowerPoint presentation from an ingested PDF."""
+    if not request.source_pdf.strip():
+        raise HTTPException(400, "source_pdf cannot be empty.")
+    if not 1 <= request.num_slides <= 30:
+        raise HTTPException(400, "num_slides must be between 1 and 30.")
+    if not 2 <= request.bullets_per_slide <= 6:
+        raise HTTPException(400, "bullets_per_slide must be between 2 and 6.")
+    if request.depth not in ["summary", "detailed", "exam"]:
+        raise HTTPException(400, "depth must be: summary, detailed, or exam.")
+    if request.style not in ["academic", "simple", "visual_hints"]:
+        raise HTTPException(400, "style must be: academic, simple, or visual_hints.")
+
+    try:
+        client = _get_client()
+        results = client.scroll(
+            collection_name="text_chunks",
+            scroll_filter={
+                "must": [{
+                    "key": "source_pdf",
+                    "match": {"value": request.source_pdf}
+                }]
+            },
+            limit=500,
+            with_payload=True
+        )
+        chunks = [point.payload for point in results[0]]
+    except Exception as e:
+        raise HTTPException(500, f"Failed to fetch chunks: {str(e)}")
+
+    if not chunks:
+        raise HTTPException(
+            404,
+            f"No content found for '{request.source_pdf}'. "
+            "Please upload and ingest the PDF first."
+        )
+
+    result = await generate_slides(
+        chunks=chunks,
+        source_pdf=request.source_pdf,
+        num_slides=request.num_slides,
+        bullets_per_slide=request.bullets_per_slide,
+        depth=request.depth,
+        topic_focus=request.topic_focus,
+        style=request.style,
+        include_title_slide=request.include_title_slide,
+        include_summary_slide=request.include_summary_slide
+    )
+
+    if result["status"] == "success":
+        filename = Path(result["file_path"]).name
+        download_url = f"/api/v1/slides/download/{filename}"
+    else:
+        download_url = None
+
+    return SlideResponse(**result, download_url=download_url)
+
+
+@router.get("/slides/download/{filename}")
+async def download_slides(filename: str):
+    """Download a generated .pptx file."""
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "Invalid filename.")
+    file_path = Path("data/outputs") / filename
+    if not file_path.exists():
+        raise HTTPException(404, "File not found.")
+    return FileResponse(
+        path=str(file_path),
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
