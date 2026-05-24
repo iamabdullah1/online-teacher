@@ -1,6 +1,7 @@
 import pytest
 import fitz
 from pathlib import Path
+from datetime import datetime
 
 pytestmark = pytest.mark.asyncio
 
@@ -110,3 +111,19 @@ async def test_page_num_is_correct(sample_pdf_path):
     result = await extract_pages(sample_pdf_path)
     assert result[0]["page_num"] == 0
     assert result[1]["page_num"] == 1
+
+
+async def test_page_has_metadata_keys(sample_pdf_path):
+    """Test that each page dict has all metadata keys."""
+    from app.ingestion.pdf_parser import extract_pages
+    result = await extract_pages(sample_pdf_path)
+    metadata_keys = {"chapter", "section_title", "word_count", "ingested_at"}
+    for item in result:
+        assert metadata_keys.issubset(item.keys())
+
+
+async def test_ingested_at_is_iso_format(sample_pdf_path):
+    """Test that ingested_at is in ISO format."""
+    from app.ingestion.pdf_parser import extract_pages
+    result = await extract_pages(sample_pdf_path)
+    datetime.fromisoformat(result[0]["ingested_at"])

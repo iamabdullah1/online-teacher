@@ -106,12 +106,23 @@ Stub implementation due to dependency conflict:
 ---
 
 ## Module 6 — retriever.py
-**Status:** Not started
+**Status:** ✅ Complete
+- [x] _rrf_score() written
+- [x] _fuse_results() written
+- [x] retrieve() written
+- [x] retrieve_text_only() written
+- [x] All 11 tests passing
 
 ---
 
 ## Module 7 — generator.py
-**Status:** Not started
+**Status:** ✅ Complete
+- [x] _format_context() written
+- [x] _build_messages() written
+- [x] generate_answer() written
+- [x] generate_answer_stream() written
+- [x] All 10 tests passing
+- [x] Using Cohere free tier (command-r-plus-08-2024)
 
 ---
 

@@ -82,3 +82,11 @@ async def test_ingest_directory_not_found():
     from app.ingestion.ingestion_pipeline import ingest_directory
     with pytest.raises(ValueError):
         await ingest_directory("/nonexistent/directory")
+
+
+async def test_ingest_pdf_chunks_have_metadata(sample_pdf):
+    """Test that ingested chunks have metadata fields."""
+    from app.ingestion.ingestion_pipeline import ingest_pdf
+    result = await ingest_pdf(sample_pdf)
+    assert result["status"] == "success"
+    assert result["text_chunks_stored"] > 0

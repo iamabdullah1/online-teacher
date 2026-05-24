@@ -41,13 +41,27 @@ def _format_context(results: list[dict[str, Any]]) -> str:
         source_pdf = result.get("source_pdf", "unknown")
         if result_type == "text":
             chunk = result.get("chunk", "")
+            chapter = result.get("chapter", "")
+            section = result.get("section_title", "")
+            location = f"Page {page_num}"
+            if chapter:
+                location = f"{chapter} | Page {page_num}"
+            if section:
+                location = f"{chapter} | {section} | Page {page_num}"
             context_parts.append(
-                f"[Source {i+1} | {source_pdf} | Page {page_num}]\n{chunk}"
+                f"[Source {i+1} | {source_pdf} | {location}]\n{chunk}"
             )
         elif result_type == "visual":
             image_path = result.get("image_path", "")
+            chapter = result.get("chapter", "")
+            section = result.get("section_title", "")
+            location = f"Page {page_num}"
+            if chapter:
+                location = f"{chapter} | Page {page_num}"
+            if section:
+                location = f"{chapter} | {section} | Page {page_num}"
             context_parts.append(
-                f"[Visual Source {i+1} | {source_pdf} | Page {page_num}]\n"
+                f"[Visual Source {i+1} | {source_pdf} | {location}]\n"
                 f"[Diagram/Figure at: {image_path}]"
             )
     return "\n\n".join(context_parts)

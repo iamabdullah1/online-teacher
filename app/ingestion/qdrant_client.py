@@ -107,6 +107,11 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
                 "page_num": chunk.get("page_num", 0),
                 "source_pdf": chunk.get("source_pdf", ""),
                 "chunk_index": chunk.get("chunk_index", i),
+                "chapter": chunk.get("chapter", ""),
+                "section_title": chunk.get("section_title", ""),
+                "word_count": chunk.get("word_count", 0),
+                "ingested_at": chunk.get("ingested_at", ""),
+                "is_first_chunk": chunk.get("is_first_chunk", False)
             },
         )
         points.append(point)
@@ -142,6 +147,9 @@ async def upsert_visual_pages(pages: list[dict]) -> int:
                     "page_num": page.get("page_num", 0),
                     "source_pdf": page.get("source_pdf", ""),
                     "patch_index": j,
+                    "chapter": page.get("chapter", ""),
+                    "section_title": page.get("section_title", ""),
+                    "ingested_at": page.get("ingested_at", "")
                 },
             )
             points.append(point)
@@ -185,6 +193,11 @@ async def search_text(
             "page_num": r.payload.get("page_num", 0),
             "source_pdf": r.payload.get("source_pdf", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
+            "chapter": r.payload.get("chapter", ""),
+            "section_title": r.payload.get("section_title", ""),
+            "word_count": r.payload.get("word_count", 0),
+            "ingested_at": r.payload.get("ingested_at", ""),
+            "is_first_chunk": r.payload.get("is_first_chunk", False),
             "score": r.score,
         }
         for r in results.points
@@ -217,6 +230,9 @@ async def search_visual(query_vector: list[float], limit: int = 5) -> list[dict]
             "page_num": r.payload.get("page_num", 0),
             "source_pdf": r.payload.get("source_pdf", ""),
             "patch_index": r.payload.get("patch_index", 0),
+            "chapter": r.payload.get("chapter", ""),
+            "section_title": r.payload.get("section_title", ""),
+            "ingested_at": r.payload.get("ingested_at", ""),
             "score": r.score,
         }
         for r in results.points

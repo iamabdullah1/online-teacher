@@ -34,6 +34,11 @@ SAMPLE_TEXT_CHUNK = {
     "page_num": 1,
     "source_pdf": "physics.pdf",
     "chunk_index": 0,
+    "chapter": "Chapter 1",
+    "section_title": "Newton's Laws",
+    "word_count": 6,
+    "ingested_at": "2026-01-01T00:00:00",
+    "is_first_chunk": True
 }
 
 SAMPLE_VISUAL_PAGE = {
@@ -112,3 +117,13 @@ async def test_empty_upsert_returns_zero():
     await qc.init_collections()
     assert await qc.upsert_text_chunks([]) == 0
     assert await qc.upsert_visual_pages([]) == 0
+
+
+async def test_search_text_returns_chapter_metadata():
+    """Test that search_text returns chapter and section_title."""
+    await qc.init_collections()
+    await qc.upsert_text_chunks([SAMPLE_TEXT_CHUNK])
+    results = await qc.search_text([0.1] * 1024, {101: 0.8}, limit=1)
+    assert "chapter" in results[0]
+    assert "section_title" in results[0]
+    assert results[0]["chapter"] == "Chapter 1"

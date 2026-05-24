@@ -56,6 +56,11 @@ async def ingest_pdf(pdf_path: str) -> dict:
                     "page_num": page["page_num"],
                     "source_pdf": str(Path(pdf_path).name),
                     "chunk_index": i,
+                    "chapter": page.get("chapter", ""),
+                    "section_title": page.get("section_title", ""),
+                    "word_count": len(chunk.split()),
+                    "ingested_at": page.get("ingested_at", ""),
+                    "is_first_chunk": i == 0
                 })
 
         if all_chunks:
@@ -74,6 +79,9 @@ async def ingest_pdf(pdf_path: str) -> dict:
             for i, emb in enumerate(visual_embeddings):
                 emb["page_num"] = visual_pages_list[i]["page_num"]
                 emb["source_pdf"] = str(Path(pdf_path).name)
+                emb["chapter"] = visual_pages_list[i].get("chapter", "")
+                emb["section_title"] = visual_pages_list[i].get("section_title", "")
+                emb["ingested_at"] = visual_pages_list[i].get("ingested_at", "")
             visual_stored = await upsert_visual_pages(visual_embeddings)
         else:
             visual_stored = 0
