@@ -9,11 +9,14 @@ from typing import Any
 
 from dotenv import load_dotenv
 from pptx import Presentation
-from pptx.util import Inches, Pt
+from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
+from PIL import Image as PILImage
 
 import cohere
+
+from app.ingestion.visual_indexer import search_figures
 
 load_dotenv()
 
@@ -50,6 +53,93 @@ STYLE_INSTRUCTIONS = {
         "a diagram or image that would illustrate this point."
     )
 }
+
+
+async def _find_best_figure_for_slide(
+    slide_title: str,
+    slide_chapter: str,
+    source_pdf: str,
+    similarity_threshold: float = 0.50
+) -> str | None:
+    """Find the most relevant cropped figure for a slide.
+
+    Uses BGE-M3 to search figure descriptions in Qdrant.
+    Only returns a figure if similarity exceeds threshold.
+
+    Args:
+        slide_title: Title of the slide.
+        slide_chapter: Chapter name for context.
+        source_pdf: PDF filename to filter results.
+        similarity_threshold: Min score (0.0-1.0).
+
+    Returns:
+        Absolute path to best matching figure PNG, or None.
+    """
+    try:
+        query = f"{slide_chapter}: {slide_title}".strip(": ")
+        print(f"[slide_generator] Searching figure for: {query}")
+
+        results = await search_figures(query, source_pdf, limit=3)
+
+        if not results:
+            print(f"[slide_generator] No figures found for: {query}")
+            return None
+
+        best = results[0]
+        score = best.get("score", 0)
+
+        if score >= similarity_threshold:
+            fig_path = best.get("figure_path", "")
+            if fig_path and Path(fig_path).exists():
+                print(f"[slide_generator] Match: {Path(fig_path).name} (score={score:.3f})")
+                return fig_path
+            else:
+                print(f"[slide_generator] Figure path not found: {fig_path}")
+                return None
+        else:
+            print(f"[slide_generator] No match above threshold (best={score:.3f})")
+            return None
+
+    except Exception as e:
+        print(f"[slide_generator] Figure search error: {e}")
+        return None
+
+
+def _find_matching_image_fallback(
+    slide_data: dict[str, Any],
+    visual_chunks: list[dict[str, Any]],
+    slide_index: int = 0,
+    total_slides: int = 10
+) -> str | None:
+    """Fallback image matching using page distribution.
+
+    Used when ColPali service is unavailable.
+
+    Args:
+        slide_data: Slide dict with title and chapter.
+        visual_chunks: List of chunk payloads with screenshots.
+        slide_index: Position of this slide (0-indexed).
+        total_slides: Total number of slides being generated.
+
+    Returns:
+        Absolute path to PNG or None.
+    """
+    if not visual_chunks:
+        return None
+
+    valid = [
+        c for c in visual_chunks
+        if c.get("screenshot_path")
+        and Path(c["screenshot_path"]).exists()
+    ]
+    if not valid:
+        return None
+
+    valid.sort(key=lambda c: c.get("page_num", 0))
+    total_pages = len(valid)
+    page_index = int((slide_index / max(total_slides, 1)) * total_pages)
+    page_index = min(page_index, total_pages - 1)
+    return valid[page_index]["screenshot_path"]
 
 
 def _get_cohere_client() -> cohere.ClientV2:
@@ -233,7 +323,7 @@ Rules:
         }
 
 
-def _build_pptx(
+async def _build_pptx(
     slides_data: list[dict[str, Any]],
     source_pdf: str,
     include_title_slide: bool,
@@ -292,10 +382,17 @@ def _build_pptx(
         p2.font.color.rgb = TEXT_COLOR
         p2.alignment = PP_ALIGN.CENTER
 
-    for slide_data in slides_data:
+    for slide_index, slide_data in enumerate(slides_data):
         layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(layout)
         set_bg(slide, BG_COLOR)
+
+        image_path = await _find_best_figure_for_slide(
+            slide_title=slide_data.get("title", ""),
+            slide_chapter=slide_data.get("chapter", ""),
+            source_pdf=source_pdf
+        )
+        has_image = image_path is not None
 
         if slide_data.get("chapter"):
             ch_box = slide.shapes.add_textbox(
@@ -327,8 +424,40 @@ def _build_pptx(
         line.fill.fore_color.rgb = TITLE_COLOR
         line.line.fill.background()
 
+        if has_image:
+            # Two-column layout: bullets on left, image on right
+            try:
+                img = PILImage.open(image_path)
+                img_width, img_height = img.size
+                aspect = img_height / img_width
+
+                max_w = Inches(5.6)
+                max_h = Inches(5.0)
+                img_w = max_w
+                img_h = Emu(int(max_w * aspect))
+                if img_h > max_h:
+                    img_h = max_h
+                    img_w = Emu(int(max_h / aspect))
+
+                img_top = Inches(1.5) + (max_h - img_h) // 2
+
+                slide.shapes.add_picture(
+                    image_path,
+                    left=Inches(7.2),
+                    top=img_top,
+                    width=img_w,
+                    height=img_h
+                )
+                print(f"[slide_generator] Added image to slide: {slide_data['title']}")
+            except Exception as e:
+                print(f"[slide_generator] Could not add image: {e}")
+                has_image = False
+
+        # Determine content box width based on whether we have an image
+        content_width = Inches(6.3) if has_image else Inches(11.93)
+
         content_box = slide.shapes.add_textbox(
-            Inches(0.7), Inches(2.1), Inches(11.93), Inches(4.8)
+            Inches(0.7), Inches(2.1), content_width, Inches(4.8)
         )
         tf = content_box.text_frame
         tf.word_wrap = True
@@ -421,7 +550,7 @@ async def generate_slides(
         slides_data = await asyncio.gather(*tasks)
         print(f"[slide_generator] Generated content for {len(slides_data)} slides")
 
-        file_path = _build_pptx(
+        file_path = await _build_pptx(
             list(slides_data),
             source_pdf,
             include_title_slide,

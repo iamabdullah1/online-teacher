@@ -141,3 +141,24 @@ Stub implementation due to dependency conflict:
 - [ ] Skills installed
 - [ ] CLAUDE.md written
 - [x] PROGRESS.md created
+
+
+## Slide Generator — image embedding
+**Status:** ✅ Complete
+- [x] _find_matching_image() written
+- [x] Two-column layout with image on right
+- [x] Falls back to single-column if no image found
+- [x] 4 new image tests passing
+- [x] 74 total tests passing
+
+---
+
+## Visual Indexer — Three-Layer System
+**Status:** ✅ Complete (replaces ColPali)
+- [x] visual_indexer.py created (extract figures, describe with Cohere)
+- [x] Added FIGURES_COLLECTION = "visual_index" to qdrant_client.py
+- [x] upsert_figures() and search_figures_collection() added
+- [x] ingestion_pipeline.py now indexes figures during PDF ingestion
+- [x] slide_generator.py uses search_figures() with similarity threshold
+- [x] 7 visual_indexer tests passing
+- [x] 81 total tests passing

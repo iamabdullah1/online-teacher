@@ -6,7 +6,9 @@
       "Bash(pytest *)",
       "Bash(python3 *)",
       "Bash(pip show *)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(python -m py_compile tests/test_ slide_ generator.py)",
+      "Bash(python *)"
     ]
   },
   "enableAllProjectMcpServers": true,

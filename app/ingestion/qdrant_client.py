@@ -20,6 +20,7 @@ load_dotenv()
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 TEXT_COLLECTION = "text_chunks"
 VISUAL_COLLECTION = "visual_pages"
+FIGURES_COLLECTION = "visual_index"
 DENSE_DIM = 1024
 VISUAL_DIM = 128
 DENSE_VECTOR_NAME = "dense"
@@ -77,6 +78,21 @@ async def init_collections() -> None:
         )
         print(f"[qdrant_client] Created collection: {VISUAL_COLLECTION}")
 
+    if FIGURES_COLLECTION not in existing_names:
+        await loop.run_in_executor(
+            None,
+            lambda: client.create_collection(
+                collection_name=FIGURES_COLLECTION,
+                vectors_config={
+                    DENSE_VECTOR_NAME: VectorParams(
+                        size=DENSE_DIM,
+                        distance=Distance.COSINE
+                    )
+                }
+            )
+        )
+        print(f"[qdrant_client] Created collection: {FIGURES_COLLECTION}")
+
 
 async def upsert_text_chunks(chunks: list[dict]) -> int:
     """Insert text chunks with dense and sparse vectors into Qdrant.
@@ -111,7 +127,9 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
                 "section_title": chunk.get("section_title", ""),
                 "word_count": chunk.get("word_count", 0),
                 "ingested_at": chunk.get("ingested_at", ""),
-                "is_first_chunk": chunk.get("is_first_chunk", False)
+                "is_first_chunk": chunk.get("is_first_chunk", False),
+                "screenshot_path": chunk.get("screenshot_path", ""),
+                "is_visual_page": chunk.get("is_visual_page", False)
             },
         )
         points.append(point)
@@ -198,6 +216,8 @@ async def search_text(
             "word_count": r.payload.get("word_count", 0),
             "ingested_at": r.payload.get("ingested_at", ""),
             "is_first_chunk": r.payload.get("is_first_chunk", False),
+            "screenshot_path": r.payload.get("screenshot_path", ""),
+            "is_visual_page": r.payload.get("is_visual_page", False),
             "score": r.score,
         }
         for r in results.points
@@ -234,6 +254,105 @@ async def search_visual(query_vector: list[float], limit: int = 5) -> list[dict]
             "section_title": r.payload.get("section_title", ""),
             "ingested_at": r.payload.get("ingested_at", ""),
             "score": r.score,
+        }
+        for r in results.points
+    ]
+
+
+async def upsert_figures(figures: list[dict]) -> int:
+    """Insert figure descriptions into visual_index collection.
+
+    Args:
+        figures: List of figure dicts from visual_indexer
+                 with description, keywords, figure_path etc.
+                 Must also include dense_vector from BGE-M3.
+
+    Returns:
+        Number of figures upserted.
+    """
+    if not figures:
+        return 0
+    loop = asyncio.get_event_loop()
+    client = _get_client()
+    points = []
+    for fig in figures:
+        point = PointStruct(
+            id=abs(hash(fig["figure_path"])) % (2**63),
+            vector={
+                DENSE_VECTOR_NAME: fig["dense_vector"]
+            },
+            payload={
+                "figure_path": fig["figure_path"],
+                "page_num": fig.get("page_num", 0),
+                "source_pdf": fig.get("source_pdf", ""),
+                "description": fig.get("description", ""),
+                "keywords": fig.get("keywords", []),
+                "has_diagram": fig.get("has_diagram", False),
+                "has_table": fig.get("has_table", False),
+                "has_formula": fig.get("has_formula", False),
+                "subject": fig.get("subject", ""),
+                "width": fig.get("width", 0),
+                "height": fig.get("height", 0),
+                "indexed_at": fig.get("indexed_at", "")
+            }
+        )
+        points.append(point)
+    await loop.run_in_executor(
+        None,
+        lambda: client.upsert(
+            collection_name=FIGURES_COLLECTION,
+            points=points
+        )
+    )
+    print(f"[qdrant_client] Upserted {len(points)} figures.")
+    return len(points)
+
+
+async def search_figures_collection(
+    dense_vector: list[float],
+    source_pdf: str,
+    limit: int = 3
+) -> list[dict]:
+    """Search visual_index collection for matching figures.
+
+    Args:
+        dense_vector: Query dense vector from BGE-M3.
+        source_pdf: PDF filename to filter by.
+        limit: Max results.
+
+    Returns:
+        List of figure dicts with score.
+    """
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    loop = asyncio.get_event_loop()
+    client = _get_client()
+    results = await loop.run_in_executor(
+        None,
+        lambda: client.query_points(
+            collection_name=FIGURES_COLLECTION,
+            query=dense_vector,
+            using=DENSE_VECTOR_NAME,
+            query_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="source_pdf",
+                        match=MatchValue(value=source_pdf)
+                    )
+                ]
+            ),
+            limit=limit
+        )
+    )
+    return [
+        {
+            "figure_path": r.payload.get("figure_path", ""),
+            "page_num": r.payload.get("page_num", 0),
+            "source_pdf": r.payload.get("source_pdf", ""),
+            "description": r.payload.get("description", ""),
+            "keywords": r.payload.get("keywords", []),
+            "has_diagram": r.payload.get("has_diagram", False),
+            "subject": r.payload.get("subject", ""),
+            "score": r.score
         }
         for r in results.points
     ]

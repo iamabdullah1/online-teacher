@@ -4,11 +4,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 from app.ingestion.pdf_parser import extract_pages
 from app.ingestion.text_embedder import embed_chunks
-from app.ingestion.visual_embedder import embed_images
+from app.ingestion.visual_indexer import index_pdf_figures
 from app.ingestion.qdrant_client import (
     init_collections,
     upsert_text_chunks,
-    upsert_visual_pages,
+    upsert_figures,
 )
 
 load_dotenv()
@@ -60,11 +60,29 @@ async def ingest_pdf(pdf_path: str) -> dict:
                     "section_title": page.get("section_title", ""),
                     "word_count": len(chunk.split()),
                     "ingested_at": page.get("ingested_at", ""),
-                    "is_first_chunk": i == 0
+                    "is_first_chunk": i == 0,
+                    "screenshot_path": page.get("screenshot_path", "")
                 })
 
-        if all_chunks:
-            chunk_texts = [c["chunk"] for c in all_chunks]
+        # Add visual pages as special text chunks (screenshot references only)
+        for page in visual_pages_list:
+            all_chunks.append({
+                "chunk": f"[Visual page {page['page_num']}]",
+                "page_num": page["page_num"],
+                "source_pdf": str(Path(pdf_path).name),
+                "chunk_index": 0,
+                "chapter": page.get("chapter", ""),
+                "section_title": page.get("section_title", ""),
+                "word_count": 0,
+                "ingested_at": page.get("ingested_at", ""),
+                "is_first_chunk": True,
+                "screenshot_path": page.get("image_path", ""),
+                "is_visual_page": True
+            })
+
+        chunk_texts = [c["chunk"] for c in all_chunks] if all_chunks else []
+
+        if chunk_texts:
             embeddings = await embed_chunks(chunk_texts)
             for i, emb in enumerate(embeddings):
                 all_chunks[i]["dense_vector"] = emb["dense_vector"]
@@ -73,18 +91,25 @@ async def ingest_pdf(pdf_path: str) -> dict:
         else:
             text_stored = 0
 
-        if visual_pages_list:
-            image_paths = [p["image_path"] for p in visual_pages_list]
-            visual_embeddings = await embed_images(image_paths)
-            for i, emb in enumerate(visual_embeddings):
-                emb["page_num"] = visual_pages_list[i]["page_num"]
-                emb["source_pdf"] = str(Path(pdf_path).name)
-                emb["chapter"] = visual_pages_list[i].get("chapter", "")
-                emb["section_title"] = visual_pages_list[i].get("section_title", "")
-                emb["ingested_at"] = visual_pages_list[i].get("ingested_at", "")
-            visual_stored = await upsert_visual_pages(visual_embeddings)
+        print("[pipeline] Indexing figures...")
+        figures = await index_pdf_figures(pdf_path, pages)
+
+        if figures:
+            descriptions = [f["description"] for f in figures]
+            desc_embeddings = await embed_chunks(descriptions)
+
+            for i, fig in enumerate(figures):
+                fig["dense_vector"] = desc_embeddings[i]["dense_vector"]
+                fig["source_pdf"] = str(Path(pdf_path).name)
+
+            figures_stored = await upsert_figures(figures)
+            print(f"[pipeline] Stored {figures_stored} figure descriptions")
         else:
-            visual_stored = 0
+            figures_stored = 0
+            print("[pipeline] No figures found in PDF")
+
+        visual_stored = 0
+        print("[pipeline] Skipping visual embedding — handled at slide generation time")
 
         return {
             "pdf_path": str(pdf_path),
@@ -93,6 +118,7 @@ async def ingest_pdf(pdf_path: str) -> dict:
             "visual_pages": len(visual_pages_list),
             "text_chunks_stored": text_stored,
             "visual_vectors_stored": visual_stored,
+            "figures_stored": figures_stored,
             "status": "success",
             "error": None,
         }
@@ -105,6 +131,7 @@ async def ingest_pdf(pdf_path: str) -> dict:
             "visual_pages": 0,
             "text_chunks_stored": 0,
             "visual_vectors_stored": 0,
+            "figures_stored": 0,
             "status": "error",
             "error": str(e),
         }

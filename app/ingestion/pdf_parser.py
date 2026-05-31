@@ -142,20 +142,27 @@ async def extract_pages(pdf_path: str) -> list[dict]:
             text = page.get_text()
             is_visual = _is_visual_page(page, text)
             heading = _extract_heading(page)
+
+            # Always save screenshot for all pages (for slides)
+            screenshot_path = await loop.run_in_executor(
+                None, _save_page_image, page, page_num + 1
+            )
+
             if is_visual or len(text.split()) < MIN_WORDS_FOR_TEXT_PAGE:
-                image_path = await loop.run_in_executor(
-                    None, _save_page_image, page, page_num + 1
-                )
+                # Visual page: use screenshot for ColPali embedding
+                image_path = screenshot_path
                 chunks = []
             else:
                 image_path = None
                 chunks = _chunk_text(text)
+
             ingested_at = datetime.utcnow().isoformat()
             results.append({
                 "page_num": page_num,
                 "text": text,
                 "is_visual": is_visual,
                 "image_path": image_path,
+                "screenshot_path": screenshot_path,
                 "chunks": chunks,
                 "chunk_count": len(chunks),
                 "chapter": heading["chapter"],
@@ -175,6 +182,7 @@ async def extract_pages(pdf_path: str) -> list[dict]:
                 "text": "",
                 "is_visual": False,
                 "image_path": None,
+                "screenshot_path": "",
                 "chunks": [],
                 "chunk_count": 0,
                 "chapter": "",
