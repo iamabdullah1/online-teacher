@@ -46,6 +46,7 @@ class IngestResponse(BaseModel):
     visual_pages: int
     text_chunks_stored: int
     visual_vectors_stored: int
+    figures_stored: int
     status: str
     error: str | None
 
@@ -113,11 +114,19 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
             limit=request.limit
         )
     else:
+        # Try visual search but don't fail if unavailable
+        query_visual = None
+        try:
+            from app.ingestion.visual_embedder import embed_query_image
+            query_visual = await embed_query_image(request.question)
+        except Exception as e:
+            print(f"[routes] Visual embedding skipped: {e}")
+
         results = await retrieve(
             request.question,
             query_emb["dense_vector"],
             query_emb["sparse_vector"],
-            query_visual=None,
+            query_visual=query_visual,
             fusion_limit=request.limit
         )
 

@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scholar — AI Teaching Assistant</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --navy: #0F1B2D;
+            --warm-white: #F8F5EE;
+            --gold: #C9A84C;
+            --gold-dark: #A8873A;
+            --slate: #2C3E50;
+            --slate-light: #546E7A;
+            --border: #D4CFC6;
+            --shadow: 0 2px 12px rgba(15,27,45,0.08);
+            --radius: 8px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Source Sans 3', sans-serif;
+            background: var(--navy);
+            color: var(--slate);
+            font-size: 16px;
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .app {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .logo svg {
+            width: 40px;
+            height: 40px;
+        }
+
+        .logo h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--warm-white);
+            letter-spacing: 1px;
+        }
+
+        .tagline {
+            color: var(--slate-light);
+            font-size: 18px;
+        }
+
+        main {
+            background: var(--warm-white);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: var(--shadow);
+        }
+
+        section {
+            margin-bottom: 48px;
+            opacity: 1;
+            transition: opacity 0.4s ease;
+        }
+
+        section:last-child {
+            margin-bottom: 0;
+        }
+
+        section.locked {
+            opacity: 0.4;
+            pointer-events: none;
+        }
+
+        section h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--slate);
+            margin-bottom: 24px;
+        }
+
+        /* Upload Section */
+        .upload-zone {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 48px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            background: var(--warm-white);
+        }
+
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: var(--gold);
+            background: #FFFDF8;
+        }
+
+        .upload-zone.has-file {
+            border-style: solid;
+            border-color: var(--gold);
+        }
+
+        .upload-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 16px;
+            opacity: 0.6;
+        }
+
+        .upload-zone p {
+            color: var(--slate-light);
+            margin-bottom: 8px;
+        }
+
+        .upload-zone .filename {
+            font-weight: 600;
+            color: var(--slate);
+            margin-top: 12px;
+        }
+
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 28px;
+            border: none;
+            border-radius: var(--radius);
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .btn:hover {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-gold {
+            background: var(--gold);
+            color: var(--navy);
+        }
+
+        .btn-gold:hover {
+            background: var(--gold-dark);
+        }
+
+        .btn-full {
+            display: block;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        /* Progress */
+        .progress-container {
+            margin-top: 24px;
+        }
+
+        .progress-status {
+            font-size: 14px;
+            color: var(--slate-light);
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--border);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: var(--gold);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border);
+            border-top-color: var(--gold);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Book Card */
+        .book-card {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px 24px;
+            margin-top: 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .book-card-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--navy);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .book-card-icon svg {
+            width: 24px;
+            height: 24px;
+            fill: var(--warm-white);
+        }
+
+        .book-card-info h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 18px;
+            color: var(--slate);
+            margin-bottom: 4px;
+        }
+
+        .book-card-info p {
+            font-size: 14px;
+            color: var(--slate-light);
+        }
+
+        /* QA Section */
+        .qa-container {
+            display: flex;
+            flex-direction: column;
+            height: 400px;
+        }
+
+        .qa-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px 0;
+        }
+
+        .qa-empty {
+            text-align: center;
+            color: var(--slate-light);
+            padding: 40px;
+        }
+
+        .qa-message {
+            background: white;
+            border-left: 3px solid var(--gold);
+            border-radius: var(--radius);
+            padding: 16px 20px;
+            margin-bottom: 16px;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .qa-question {
+            font-size: 13px;
+            color: var(--slate-light);
+            margin-bottom: 8px;
+        }
+
+        .qa-answer {
+            color: var(--slate);
+            line-height: 1.7;
+        }
+
+        .qa-sources {
+            margin-top: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .qa-source {
+            background: var(--navy);
+            color: white;
+            font-size: 11px;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+
+        .qa-input-area {
+            display: flex;
+            gap: 12px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+        }
+
+        .qa-input-area textarea {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 16px;
+            resize: none;
+            min-height: 48px;
+            max-height: 120px;
+        }
+
+        .qa-input-area textarea:focus {
+            outline: none;
+            border-color: var(--gold);
+            box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.2);
+        }
+
+        .qa-input-area .btn {
+            align-self: flex-end;
+        }
+
+        /* Slides Section */
+        .slides-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .slides-modes {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mode-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border);
+            background: white;
+            border-radius: var(--radius);
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+            background: var(--navy);
+            color: white;
+            border-color: var(--navy);
+        }
+
+        .mode-btn:hover:not(.active) {
+            border-color: var(--gold);
+        }
+
+        .slides-controls {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .slides-controls.expanded {
+            display: block;
+        }
+
+        .control-group {
+            margin-bottom: 16px;
+        }
+
+        .control-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--slate);
+            margin-bottom: 8px;
+        }
+
+        .control-group .slider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .control-group input[type="range"] {
+            flex: 1;
+            accent-color: var(--gold);
+        }
+
+        .control-group .slider-value {
+            font-weight: 600;
+            color: var(--gold);
+            min-width: 24px;
+        }
+
+        .control-group .toggle-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        .control-group input[type="text"] {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 14px;
+        }
+
+        .control-group input[type="text"]:focus {
+            outline: none;
+            border-color: var(--gold);
+        }
+
+        .control-group .checkbox-group {
+            display: flex;
+            gap: 16px;
+        }
+
+        .control-group .checkbox-group label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 400;
+            cursor: pointer;
+        }
+
+        .control-group input[type="checkbox"] {
+            accent-color: var(--gold);
+        }
+
+        .slides-progress {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .slides-progress.active {
+            display: block;
+        }
+
+        .slides-preview {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .slides-preview.active {
+            display: block;
+        }
+
+        .slides-preview h3 {
+            font-size: 14px;
+            color: var(--slate-light);
+            margin-bottom: 12px;
+        }
+
+        .slides-preview-list {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .slide-preview-card {
+            flex-shrink: 0;
+            width: 140px;
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+        }
+
+        .slide-preview-card h4 {
+            font-size: 13px;
+            color: var(--slate);
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .slide-preview-card p {
+            font-size: 11px;
+            color: var(--slate-light);
+        }
+
+        .slides-stats {
+            margin-top: 12px;
+            font-size: 14px;
+            color: var(--slate-light);
+        }
+
+        /* Error Banner */
+        .error-banner {
+            background: #FEE2E2;
+            border: 1px solid #FECACA;
+            color: #991B1B;
+            padding: 12px 16px;
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error-banner.active {
+            display: block;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 32px 0 0;
+            color: var(--slate-light);
+            font-size: 14px;
+        }
+
+        /* Intersection Observer fade in */
+        .fade-in {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+        }
+
+        .fade-in.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <header>
+            <div class="logo">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="#C9A84C"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="#C9A84C"/>
+                    <path d="M8 7h8M8 11h8M8 15h4" stroke="#C9A84C"/>
+                </svg>
+                <h1>Scholar</h1>
+            </div>
+            <p class="tagline">Upload your textbook. Ask anything. Get slides instantly.</p>
+        </header>
+
+        <main>
+            <div class="error-banner" id="errorBanner"></div>
+
+            <section id="upload" class="fade-in">
+                <h2>Upload Textbook</h2>
+                <div class="upload-zone" id="uploadZone">
+                    <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                    </svg>
+                    <p>Drag and drop your PDF here, or click to browse</p>
+                    <input type="file" id="fileInput" accept=".pdf">
+                </div>
+                <p class="filename" id="fileName"></p>
+                <button class="btn btn-gold btn-full" id="uploadBtn" disabled>Upload & Process</button>
+
+                <div class="progress-container" id="uploadProgress" style="display: none;">
+                    <p class="progress-status" id="progressStatus">Uploading...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="book-card" id="bookCard" style="display: none;">
+                    <div class="book-card-icon">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                        </svg>
+                    </div>
+                    <div class="book-card-info">
+                        <h3 id="bookTitle"></h3>
+                        <p id="bookStats"></p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="qa" class="locked fade-in">
+                <h2>Ask Questions</h2>
+                <div class="qa-container">
+                    <div class="qa-messages" id="qaMessages">
+                        <div class="qa-empty">Ask a question about your textbook above</div>
+                    </div>
+                    <div class="qa-input-area">
+                        <textarea id="questionInput" placeholder="Ask a question about your textbook..." rows="1"></textarea>
+                        <button class="btn btn-gold" id="askBtn" disabled>Send</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="slides" class="locked fade-in">
+                <div class="slides-header">
+                    <h2>Generate Presentation</h2>
+                    <div class="slides-modes">
+                        <button class="mode-btn active" id="autoModeBtn">Auto</button>
+                        <button class="mode-btn" id="customModeBtn">Customize ▾</button>
+                    </div>
+                </div>
+
+                <div class="slides-controls" id="slidesControls">
+                    <div class="control-group">
+                        <label>Number of slides: <span class="slider-value" id="slideCountValue">10</span></label>
+                        <div class="slider">
+                            <input type="range" id="slideCount" min="5" max="20" value="10">
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Depth</label>
+                        <div class="toggle-group" id="depthGroup">
+                            <button class="mode-btn" data-value="summary">Summary</button>
+                            <button class="mode-btn active" data-value="detailed">Detailed</button>
+                            <button class="mode-btn" data-value="exam">Exam Notes</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Style</label>
+                        <div class="toggle-group" id="styleGroup">
+                            <button class="mode-btn active" data-value="academic">Academic</button>
+                            <button class="mode-btn" data-value="simple">Simple</button>
+                            <button class="mode-btn" data-value="visual_hints">Visual Hints</button>
+                        </div>
+                    </div>
+                    <div class="control-group">
+                        <label>Topic focus (optional)</label>
+                        <input type="text" id="topicFocus" placeholder="e.g., Chapter 3, Cell Biology">
+                    </div>
+                    <div class="control-group">
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" id="includeTitle" checked> Include title slide</label>
+                            <label><input type="checkbox" id="includeSummary" checked> Include summary slide</label>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-gold btn-full" id="generateBtn">Generate Slides</button>
+
+                <div class="slides-progress" id="slidesProgress">
+                    <p class="progress-status" id="slidesProgressStatus">Analyzing content...</p>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="slidesProgressFill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="slides-preview" id="slidesPreview">
+                    <h3>Preview</h3>
+                    <div class="slides-preview-list" id="slidesPreviewList"></div>
+                    <p class="slides-stats" id="slidesStats"></p>
+                    <button class="btn btn-gold btn-full" id="downloadBtn" style="margin-top: 16px;">Download .pptx</button>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            Made with Scholar · 2026
+        </footer>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000/api/v1';
+
+        const state = {
+            uploadedBook: null,
+            currentPdfName: null,
+            isUploading: false,
+            isQuerying: false,
+            isGenerating: false,
+            qaHistory: [],
+            generatedSlides: null,
+            selectedDepth: 'detailed',
+            selectedStyle: 'academic'
+        };
+
+        // DOM Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileName = document.getElementById('fileName');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const uploadProgress = document.getElementById('uploadProgress');
+        const progressStatus = document.getElementById('progressStatus');
+        const progressFill = document.getElementById('progressFill');
+        const bookCard = document.getElementById('bookCard');
+        const bookTitle = document.getElementById('bookTitle');
+        const bookStats = document.getElementById('bookStats');
+        const qaSection = document.getElementById('qa');
+        const slidesSection = document.getElementById('slides');
+        const qaMessages = document.getElementById('qaMessages');
+        const questionInput = document.getElementById('questionInput');
+        const askBtn = document.getElementById('askBtn');
+        const autoModeBtn = document.getElementById('autoModeBtn');
+        const customModeBtn = document.getElementById('customModeBtn');
+        const slidesControls = document.getElementById('slidesControls');
+        const slideCount = document.getElementById('slideCount');
+        const slideCountValue = document.getElementById('slideCountValue');
+        const depthGroup = document.getElementById('depthGroup');
+        const styleGroup = document.getElementById('styleGroup');
+        const topicFocus = document.getElementById('topicFocus');
+        const includeTitle = document.getElementById('includeTitle');
+        const includeSummary = document.getElementById('includeSummary');
+        const generateBtn = document.getElementById('generateBtn');
+        const slidesProgress = document.getElementById('slidesProgress');
+        const slidesProgressStatus = document.getElementById('slidesProgressStatus');
+        const slidesProgressFill = document.getElementById('slidesProgressFill');
+        const slidesPreview = document.getElementById('slidesPreview');
+        const slidesPreviewList = document.getElementById('slidesPreviewList');
+        const slidesStats = document.getElementById('slidesStats');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const errorBanner = document.getElementById('errorBanner');
+
+        // Utility Functions
+        function showError(msg) {
+            errorBanner.textContent = msg;
+            errorBanner.classList.add('active');
+            setTimeout(() => errorBanner.classList.remove('active'), 5000);
+        }
+
+        function updateUI() {
+            const hasBook = state.uploadedBook !== null;
+            qaSection.classList.toggle('locked', !hasBook);
+            slidesSection.classList.toggle('locked', !hasBook);
+            askBtn.disabled = !hasBook || state.isQuerying;
+        }
+
+        // File Handling
+        let selectedFile = null;
+
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                handleFileSelect(files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+
+        function handleFileSelect(file) {
+            if (file.type !== 'application/pdf') {
+                showError('Please select a PDF file');
+                return;
+            }
+            selectedFile = file;
+            fileName.textContent = file.name;
+            uploadZone.classList.add('has-file');
+            uploadBtn.disabled = false;
+        }
+
+        // Upload
+        uploadBtn.addEventListener('click', uploadPDF);
+
+        async function uploadPDF() {
+            if (!selectedFile || state.isUploading) return;
+
+            state.isUploading = true;
+            uploadBtn.disabled = true;
+            uploadProgress.style.display = 'block';
+            progressFill.style.width = '0%';
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            try {
+                progressStatus.innerHTML = '<span class="spinner"></span>Uploading...';
+                progressFill.style.width = '20%';
+
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+
+                progressStatus.textContent = 'Extracting pages...';
+                progressFill.style.width = '40%';
+
+                const data = await response.json();
+
+                progressStatus.textContent = 'Building search index...';
+                progressFill.style.width = '70%';
+
+                // Wait for indexing to complete
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                progressFill.style.width = '100%';
+                progressStatus.textContent = `✓ Ready — ${data.total_pages} pages indexed`;
+
+                state.uploadedBook = {
+                    name: selectedFile.name,
+                    pages: data.total_pages,
+                    chunks: data.text_chunks_stored,
+                    figures: data.figures_stored
+                };
+                state.currentPdfName = selectedFile.name;
+
+                bookTitle.textContent = selectedFile.name.replace('.pdf', '').replace(/_/g, ' ');
+                bookStats.textContent = `${data.total_pages} pages · ${data.text_chunks_stored} chunks · ${data.figures_stored || 0} figures`;
+                bookCard.style.display = 'flex';
+
+                updateUI();
+            } catch (err) {
+                console.error(err);
+                if (err.message.includes('connection')) {
+                    showError('Backend not running — start the server first');
+                } else {
+                    showError(err.message);
+                }
+            } finally {
+                state.isUploading = false;
+                uploadBtn.disabled = false;
+            }
+        }
+
+        // Q&A
+        questionInput.addEventListener('input', () => {
+            questionInput.style.height = 'auto';
+            questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
+            askBtn.disabled = !state.uploadedBook || !questionInput.trim();
+        });
+
+        questionInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                askQuestion();
+            }
+        });
+
+        askBtn.addEventListener('click', askQuestion);
+
+        async function askQuestion() {
+            const question = questionInput.value.trim();
+            if (!question || !state.currentPdfName || state.isQuerying) return;
+
+            state.isQuerying = true;
+            askBtn.disabled = true;
+            questionInput.value = '';
+
+            // Show loading message
+            const loadingMsg = document.createElement('div');
+            loadingMsg.className = 'qa-message';
+            loadingMsg.innerHTML = `
+                <div class="qa-question">${question}</div>
+                <div class="qa-answer"><span class="spinner"></span>Searching textbook...</div>
+            `;
+            qaMessages.appendChild(loadingMsg);
+            qaMessages.scrollTop = qaMessages.scrollHeight;
+
+            try {
+                const response = await fetch(`${API_BASE}/query`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question: question,
+                        text_only: false,
+                        limit: 5
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Query failed: ${response.status}`);
+
+                const data = await response.json();
+
+                loadingMsg.remove();
+
+                const msgEl = document.createElement('div');
+                msgEl.className = 'qa-message';
+
+                let sourcesHtml = '';
+                if (data.sources && data.sources.length > 0) {
+                    sourcesHtml = '<div class="qa-sources">' + data.sources.map(s =>
+                        `<span class="qa-source">${s.chapter || 'Ch.'} · Page ${s.page_num}</span>`
+                    ).join('') + '</div>';
+                }
+
+                msgEl.innerHTML = `
+                    <div class="qa-question">${question}</div>
+                    <div class="qa-answer">${data.answer}</div>
+                    ${sourcesHtml}
+                `;
+                qaMessages.appendChild(msgEl);
+
+                state.qaHistory.push({ question, answer: data.answer, sources: data.sources });
+                qaMessages.scrollTop = qaMessages.scrollHeight;
+
+                // Update empty state
+                const emptyEl = qaMessages.querySelector('.qa-empty');
+                if (emptyEl) emptyEl.remove();
+            } catch (err) {
+                loadingMsg.remove();
+                showError(err.message);
+            } finally {
+                state.isQuerying = false;
+                askBtn.disabled = !state.uploadedBook;
+            }
+        }
+
+        // Slide Generation
+        autoModeBtn.addEventListener('click', () => {
+            autoModeBtn.classList.add('active');
+            customModeBtn.classList.remove('active');
+            slidesControls.classList.remove('expanded');
+        });
+
+        customModeBtn.addEventListener('click', () => {
+            customModeBtn.classList.add('active');
+            autoModeBtn.classList.remove('active');
+            slidesControls.classList.add('expanded');
+        });
+
+        slideCount.addEventListener('input', () => {
+            slideCountValue.textContent = slideCount.value;
+        });
+
+        depthGroup.addEventListener('click', (e) => {
+            if (e.target.classList.contains('mode-btn')) {
+                depthGroup.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                state.selectedDepth = e.target.dataset.value;
+            }
+        });
+
+        styleGroup.addEventListener('click', (e) => {
+            if (e.target.classList.contains('mode-btn')) {
+                styleGroup.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                state.selectedStyle = e.target.dataset.value;
+            }
+        });
+
+        generateBtn.addEventListener('click', generateSlides);
+
+        async function generateSlides() {
+            if (!state.currentPdfName || state.isGenerating) return;
+
+            state.isGenerating = true;
+            generateBtn.disabled = true;
+            slidesProgress.classList.add('active');
+            slidesPreview.classList.remove('active');
+
+            const progressSteps = [
+                'Analyzing content...',
+                'Generating slide topics...',
+                'Writing slide content...',
+                'Building presentation...'
+            ];
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += 25;
+                if (progress > 90) progress = 90;
+                slidesProgressFill.style.width = progress + '%';
+                slidesProgressStatus.textContent = progressSteps[Math.floor(progress / 25)];
+            }, 800);
+
+            try {
+                const response = await fetch(`${API_BASE}/generate/slides`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source_pdf: state.currentPdfName,
+                        num_slides: parseInt(slideCount.value),
+                        bullets_per_slide: 4,
+                        depth: state.selectedDepth,
+                        topic_focus: topicFocus.value || 'all',
+                        style: state.selectedStyle,
+                        include_title_slide: includeTitle.checked,
+                        include_summary_slide: includeSummary.checked
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Generation failed: ${response.status}`);
+
+                const data = await response.json();
+
+                clearInterval(progressInterval);
+                slidesProgressFill.style.width = '100%';
+                slidesProgressStatus.textContent = '✓ Complete!';
+
+                state.generatedSlides = data;
+
+                // Show preview
+                slidesPreviewList.innerHTML = data.topics.map(t => `
+                    <div class="slide-preview-card">
+                        <h4>${t.substring(0, 20)}${t.length > 20 ? '...' : ''}</h4>
+                        <p>4 bullets</p>
+                    </div>
+                `).join('');
+
+                slidesStats.textContent = `${data.num_slides} slides`;
+                slidesPreview.classList.add('active');
+
+                setTimeout(() => {
+                    slidesProgress.classList.remove('active');
+                }, 1500);
+            } catch (err) {
+                clearInterval(progressInterval);
+                showError(err.message);
+            } finally {
+                state.isGenerating = false;
+                generateBtn.disabled = false;
+            }
+        }
+
+        downloadBtn.addEventListener('click', () => {
+            if (!state.generatedSlides || !state.generatedSlides.file_path) return;
+
+            const filename = state.generatedSlides.file_path.split('/').pop();
+            window.location.href = `${API_BASE}/slides/download/${filename}`;
+        });
+
+        // Intersection Observer for fade-in
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                }
+            });
+        }, { threshold: 0.1 });
+
+        document.querySelectorAll('.fade-in').forEach(el => {
+            observer.observe(el);
+        });
+
+        // Initial UI update
+        updateUI();
+    </script>
+</body>
+</html>

@@ -52,10 +52,13 @@ async def retrieve(
         key = f"text:{res.get('source_pdf', '')}:{res.get('page_num', 0)}"
         text_rank_map[key] = (idx + 1, res.get("score", 0.0))
 
-    # Visual search (if visual vector provided)
+    # Visual search (if visual vector provided) - graceful failure handling
     visual_results: list[dict[str, Any]] = []
     if query_visual:
-        visual_results = await qc.search_visual(query_visual, limit=visual_limit)
+        try:
+            visual_results = await qc.search_visual(query_visual, limit=visual_limit)
+        except Exception as e:
+            print(f"[retriever] Visual search skipped: {e}")
 
     # Build visual rankings
     visual_rank_map: dict[str, tuple[int, float]] = {}

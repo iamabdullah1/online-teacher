@@ -120,16 +120,17 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
             },
             payload={
                 "chunk": chunk["chunk"],
-                "page_num": chunk.get("page_num", 0),
+                "chunk_index": chunk.get("chunk_index", 0),
+                "total_chunks": chunk.get("total_chunks", 0),
                 "source_pdf": chunk.get("source_pdf", ""),
-                "chunk_index": chunk.get("chunk_index", i),
+                "page_num": chunk.get("page_num", 0),
+                "page_total": chunk.get("page_total", 0),
                 "chapter": chunk.get("chapter", ""),
                 "section_title": chunk.get("section_title", ""),
                 "word_count": chunk.get("word_count", 0),
-                "ingested_at": chunk.get("ingested_at", ""),
                 "is_first_chunk": chunk.get("is_first_chunk", False),
-                "screenshot_path": chunk.get("screenshot_path", ""),
-                "is_visual_page": chunk.get("is_visual_page", False)
+                "doc_id": chunk.get("doc_id", ""),
+                "ingested_at": chunk.get("ingested_at", "")
             },
         )
         points.append(point)
@@ -208,16 +209,17 @@ async def search_text(
     return [
         {
             "chunk": r.payload.get("chunk", ""),
-            "page_num": r.payload.get("page_num", 0),
-            "source_pdf": r.payload.get("source_pdf", ""),
             "chunk_index": r.payload.get("chunk_index", 0),
+            "total_chunks": r.payload.get("total_chunks", 0),
+            "source_pdf": r.payload.get("source_pdf", ""),
+            "page_num": r.payload.get("page_num", 0),
+            "page_total": r.payload.get("page_total", 0),
             "chapter": r.payload.get("chapter", ""),
             "section_title": r.payload.get("section_title", ""),
             "word_count": r.payload.get("word_count", 0),
-            "ingested_at": r.payload.get("ingested_at", ""),
             "is_first_chunk": r.payload.get("is_first_chunk", False),
-            "screenshot_path": r.payload.get("screenshot_path", ""),
-            "is_visual_page": r.payload.get("is_visual_page", False),
+            "doc_id": r.payload.get("doc_id", ""),
+            "ingested_at": r.payload.get("ingested_at", ""),
             "score": r.score,
         }
         for r in results.points
@@ -282,18 +284,18 @@ async def upsert_figures(figures: list[dict]) -> int:
                 DENSE_VECTOR_NAME: fig["dense_vector"]
             },
             payload={
-                "figure_path": fig["figure_path"],
-                "page_num": fig.get("page_num", 0),
-                "source_pdf": fig.get("source_pdf", ""),
                 "description": fig.get("description", ""),
                 "keywords": fig.get("keywords", []),
+                "subject": fig.get("subject", ""),
                 "has_diagram": fig.get("has_diagram", False),
                 "has_table": fig.get("has_table", False),
                 "has_formula": fig.get("has_formula", False),
-                "subject": fig.get("subject", ""),
-                "width": fig.get("width", 0),
-                "height": fig.get("height", 0),
-                "indexed_at": fig.get("indexed_at", "")
+                "source_pdf": fig.get("source_pdf", ""),
+                "page_num": fig.get("page_num", 0),
+                "figure_index": fig.get("figure_index", 0),
+                "figure_filename": fig.get("figure_filename", ""),
+                "doc_id": fig.get("doc_id", ""),
+                "ingested_at": fig.get("ingested_at", "")
             }
         )
         points.append(point)
@@ -345,13 +347,14 @@ async def search_figures_collection(
     )
     return [
         {
-            "figure_path": r.payload.get("figure_path", ""),
+            "figure_filename": r.payload.get("figure_filename", ""),
             "page_num": r.payload.get("page_num", 0),
             "source_pdf": r.payload.get("source_pdf", ""),
             "description": r.payload.get("description", ""),
             "keywords": r.payload.get("keywords", []),
             "has_diagram": r.payload.get("has_diagram", False),
             "subject": r.payload.get("subject", ""),
+            "doc_id": r.payload.get("doc_id", ""),
             "score": r.score
         }
         for r in results.points

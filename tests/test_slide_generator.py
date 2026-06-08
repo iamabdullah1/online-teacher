@@ -32,10 +32,11 @@ def sample_image(tmp_path):
 
 async def test_find_best_figure_for_slide_success(sample_image):
     with patch("app.generation.slide_generator.search_figures", new_callable=AsyncMock) as ms:
-        ms.return_value = [{"figure_path": sample_image, "source_pdf": "physics.pdf", "score": 0.9}]
-        from app.generation.slide_generator import _find_best_figure_for_slide
-        r = await _find_best_figure_for_slide("Test", "Ch1", "physics.pdf")
-        assert r == sample_image
+        ms.return_value = [{"figure_filename": Path(sample_image).name, "source_pdf": "physics.pdf", "score": 0.9}]
+        with patch("pathlib.Path.exists", return_value=True):
+            from app.generation.slide_generator import _find_best_figure_for_slide
+            r = await _find_best_figure_for_slide("Test", "Ch1", "physics.pdf")
+            assert r == str(Path("data/processed/figures") / Path(sample_image).name)
 
 
 async def test_find_best_figure_for_slide_no_results():

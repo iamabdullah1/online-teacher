@@ -1,4 +1,5 @@
 import asyncio
+import re
 from datetime import datetime
 from pathlib import Path
 import fitz  # PyMuPDF
@@ -13,6 +14,37 @@ MIN_WORDS_FOR_TEXT_PAGE = 10
 VISUAL_KEYWORDS = ["figure", "diagram", "table", "chart", "graph", "illustration"]
 HEADING_FONT_SIZE_THRESHOLD = 14.0
 CHAPTER_KEYWORDS = ["chapter", "unit", "part", "section"]
+
+
+def _clean_text(text: str) -> str:
+    """Remove header/footer noise from extracted PDF text.
+
+    Args:
+        text: Raw extracted text from PyMuPDF.
+
+    Returns:
+        Cleaned text with noise removed.
+    """
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Skip lines with file paths
+        if 'File:' in line and ('\\' in line or '/' in line):
+            continue
+        # Skip lines with .ppt references
+        if '.ppt' in line.lower():
+            continue
+        # Skip copyright lines
+        if '©' in line or 'copyright' in line.lower():
+            continue
+        # Skip short header-style lines (page numbers etc)
+        if re.match(r'^Molecular Biology:\s*\d+', line):
+            continue
+        cleaned.append(line)
+    return ' '.join(cleaned).strip()
 
 
 def _is_visual_page(page: fitz.Page, text: str) -> bool:
@@ -140,6 +172,7 @@ async def extract_pages(pdf_path: str) -> list[dict]:
         try:
             page = doc.load_page(page_num)
             text = page.get_text()
+            text = _clean_text(text)
             is_visual = _is_visual_page(page, text)
             heading = _extract_heading(page)
 

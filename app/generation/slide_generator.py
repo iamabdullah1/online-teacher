@@ -59,45 +59,57 @@ async def _find_best_figure_for_slide(
     slide_title: str,
     slide_chapter: str,
     source_pdf: str,
-    similarity_threshold: float = 0.50
+    slide_page_hint: int = 0,
+    similarity_threshold: float = 0.45
 ) -> str | None:
-    """Find the most relevant cropped figure for a slide.
-
-    Uses BGE-M3 to search figure descriptions in Qdrant.
-    Only returns a figure if similarity exceeds threshold.
-
-    Args:
-        slide_title: Title of the slide.
-        slide_chapter: Chapter name for context.
-        source_pdf: PDF filename to filter results.
-        similarity_threshold: Min score (0.0-1.0).
-
-    Returns:
-        Absolute path to best matching figure PNG, or None.
     """
+    Find the most relevant cropped figure for a slide.
+    Combines description similarity with page proximity.
+    """
+    if not slide_title:
+        return None
+
     try:
         query = f"{slide_chapter}: {slide_title}".strip(": ")
         print(f"[slide_generator] Searching figure for: {query}")
 
-        results = await search_figures(query, source_pdf, limit=3)
+        results = await search_figures(query, source_pdf, limit=5)
 
         if not results:
             print(f"[slide_generator] No figures found for: {query}")
             return None
 
-        best = results[0]
-        score = best.get("score", 0)
+        best_path = None
+        best_combined = 0.0
+        best_result = None
 
-        if score >= similarity_threshold:
-            fig_path = best.get("figure_path", "")
-            if fig_path and Path(fig_path).exists():
-                print(f"[slide_generator] Match: {Path(fig_path).name} (score={score:.3f})")
-                return fig_path
+        for result in results:
+            desc_score = result.get("score", 0)
+
+            if slide_page_hint > 0:
+                page_diff = abs(result.get("page_num", 0) - slide_page_hint)
+                proximity_bonus = max(0, 0.15 - (page_diff * 0.01))
             else:
-                print(f"[slide_generator] Figure path not found: {fig_path}")
+                proximity_bonus = 0
+
+            combined = (desc_score * 0.85) + proximity_bonus
+
+            if combined > best_combined:
+                best_combined = combined
+                best_result = result
+
+        if best_result and best_combined >= similarity_threshold:
+            figures_dir = Path("data/processed/figures")
+            figure_filename = best_result.get("figure_filename", "")
+            figure_path = figures_dir / figure_filename if figure_filename else None
+            if figure_path and figure_path.exists():
+                print(f"[slide_generator] Match: {figure_path.name} (score={best_combined:.3f})")
+                return str(figure_path)
+            else:
+                print(f"[slide_generator] Figure not found: {figure_filename}")
                 return None
         else:
-            print(f"[slide_generator] No match above threshold (best={score:.3f})")
+            print(f"[slide_generator] No match above threshold (best={best_combined:.3f})")
             return None
 
     except Exception as e:
@@ -170,7 +182,18 @@ async def _extract_topics(
         ]
         context_chunks = filtered[:20] if filtered else chunks[:20]
     else:
-        context_chunks = chunks[:30]
+        total = len(chunks)
+        if total <= 30:
+            context_chunks = chunks[:30]
+        else:
+            # Sample evenly across entire document
+            step = max(1, total // 30)
+            context_chunks = [chunks[i] for i in range(0, total, step)][:30]
+            # Always include first and last chunks for context
+            if chunks[0] not in context_chunks:
+                context_chunks = [chunks[0]] + context_chunks[:29]
+            if chunks[-1] not in context_chunks:
+                context_chunks = context_chunks[:29] + [chunks[-1]]
 
     context = "\n\n".join([
         f"[{c.get('chapter', 'General')} | Page {c.get('page_num', 0)}]\n{c.get('chunk', '')[:300]}"
@@ -246,11 +269,27 @@ async def _generate_slide_content(
     Returns:
         Dict with keys: title, bullets, chapter
     """
-    relevant = [
-        c for c in chunks
-        if topic.get("topic", "").lower() in c.get("chunk", "").lower() or
-        topic.get("chapter", "").lower() in c.get("chapter", "").lower()
-    ][:5]
+    # Search for relevant chunks across entire document
+    topic_words = set(topic.get("topic", "").lower().split())
+    chapter_lower = topic.get("chapter", "").lower()
+
+    scored = []
+    for c in chunks:
+        chunk_lower = c.get("chunk", "").lower()
+        chapter_match = chapter_lower and chapter_lower in c.get("chapter", "").lower()
+        word_matches = sum(1 for w in topic_words if w in chunk_lower and len(w) > 3)
+        score = word_matches + (3 if chapter_match else 0)
+        if score > 0:
+            scored.append((score, c))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    relevant = [c for _, c in scored[:5]]
+
+    # Fallback: use evenly sampled chunks if no matches
+    if not relevant:
+        total = len(chunks)
+        step = max(1, total // 5)
+        relevant = [chunks[i] for i in range(0, total, step)][:5]
 
     context = "\n\n".join([
         c.get("chunk", "")[:400] for c in relevant
@@ -543,16 +582,26 @@ async def generate_slides(
         topics = await _extract_topics(chunks, num_slides, topic_focus)
         print(f"[slide_generator] Extracted {len(topics)} topics")
 
+            # Process in batches of 5 to avoid overwhelming Cohere
+        async def _gather_in_batches(tasks, batch_size=5):
+            results = []
+            for i in range(0, len(tasks), batch_size):
+                batch = tasks[i:i + batch_size]
+                batch_results = await asyncio.gather(*batch)
+                results.extend(batch_results)
+            return results
+
         tasks = [
             _generate_slide_content(topic, chunks, bullets_per_slide, depth, style)
             for topic in topics
         ]
-        slides_data = await asyncio.gather(*tasks)
+        slides_data = await _gather_in_batches(tasks, batch_size=5)                         
+
         print(f"[slide_generator] Generated content for {len(slides_data)} slides")
 
         file_path = await _build_pptx(
             list(slides_data),
-            source_pdf,
+            source_pdf,§za
             include_title_slide,
             include_summary_slide
         )
