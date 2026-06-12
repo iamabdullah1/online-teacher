@@ -89,7 +89,7 @@
         }
 
         section.locked {
-            opacity: 0.4;
+            opacity: 0.4 !important;
             pointer-events: none;
         }
 
@@ -289,6 +289,20 @@
             border-bottom: 2px solid var(--border);
         }
 
+        .book-list-table tr.active-book {
+            background: #FFFDF8;
+            border-left: 3px solid var(--gold);
+        }
+        .book-list-table tr.active-book .filename-cell {
+            color: var(--gold-dark);
+        }
+        .book-list-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .book-list-table tbody tr:hover {
+            background: #FFFDF8;
+        }
         .book-list-table td {
             padding: 12px;
             border-bottom: 1px solid var(--border);
@@ -883,6 +897,7 @@
             qaSection.classList.toggle('locked', !hasBook);
             slidesSection.classList.toggle('locked', !hasBook);
             askBtn.disabled = !hasBook || state.isQuerying;
+            generateBtn.disabled = !hasBook || state.isGenerating;
         }
 
         function showStatus(msg, type) {
@@ -901,11 +916,12 @@
                 return;
             }
             let html = '<table class="book-list-table">' +
-                '<thead><tr><th>Filename</th><th>Size</th><th>Chunks</th><th>Status</th><th></th></tr></thead><tbody>';
+                '<thead><tr><th>Filename</th><th>Size</th><th>Chunks</th><th>Status</th><th></th></tr></thead><tbody id="bookTableBody">';
             for (const pdf of pdfs) {
                 const badgeClass = pdf.ingested ? 'badge-indexed' : 'badge-not-indexed';
                 const badgeText = pdf.ingested ? 'Indexed' : 'Not indexed';
-                html += '<tr>' +
+                const isActive = state.currentPdfName === pdf.filename;
+                html += '<tr class="' + (isActive ? 'active-book' : '') + '" data-filename="' + pdf.filename.replace(/"/g, '&quot;') + '">' +
                     '<td class="filename-cell">' + pdf.filename + '</td>' +
                     '<td class="meta-cell">' + pdf.size_mb + ' MB</td>' +
                     '<td class="meta-cell">' + pdf.chunk_count + '</td>' +
@@ -916,6 +932,34 @@
             }
             html += '</tbody></table>';
             container.innerHTML = html;
+
+            // Click row to select book (delegated to tbody)
+            const tbody = document.getElementById('bookTableBody');
+            tbody.addEventListener('click', (e) => {
+                if (e.target.closest('.btn-delete')) return;
+                const row = e.target.closest('tr');
+                if (!row) return;
+                const filename = row.dataset.filename;
+                const pdf = pdfs.find(p => p.filename === filename);
+                if (pdf && pdf.ingested) selectBook(pdf);
+            });
+        }
+
+        function selectBook(pdf) {
+            state.uploadedBook = {
+                name: pdf.filename,
+                pages: pdf.chunk_count || 0,
+                chunks: pdf.chunk_count || 0,
+                figures: 0
+            };
+            state.currentPdfName = pdf.filename;
+            state.qaHistory = [];
+            state.generatedSlides = null;
+
+            bookTitle.textContent = pdf.filename.replace('.pdf', '').replace(/_/g, ' ');
+            bookStats.textContent = `${pdf.size_mb} MB · ${pdf.chunk_count} chunks`;
+            bookCard.style.display = 'flex';
+            updateUI();
         }
 
         async function loadUploadedBooks() {
@@ -923,6 +967,12 @@
                 const response = await fetch(API_BASE + '/uploads');
                 const data = await response.json();
                 renderBookList(data.pdfs);
+
+                // Auto-select first ingested PDF if none currently selected
+                if (!state.currentPdfName && data.pdfs && data.pdfs.length > 0) {
+                    const first = data.pdfs.find(p => p.ingested) || data.pdfs[0];
+                    selectBook(first);
+                }
             } catch (e) {
                 console.error('Failed to load books:', e);
             }
@@ -1067,7 +1117,7 @@
         questionInput.addEventListener('input', () => {
             questionInput.style.height = 'auto';
             questionInput.style.height = Math.min(questionInput.scrollHeight, 120) + 'px';
-            askBtn.disabled = !state.uploadedBook || !questionInput.trim();
+            askBtn.disabled = !state.uploadedBook || !questionInput.value.trim();
         });
 
         questionInput.addEventListener('keydown', (e) => {
