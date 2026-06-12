@@ -51,6 +51,16 @@ class IngestResponse(BaseModel):
     error: str | None
 
 
+class DeleteResponse(BaseModel):
+    """Response model for PDF deletion."""
+    source_pdf: str
+    text_chunks_deleted: bool
+    figures_deleted: bool
+    files_deleted: int
+    status: str
+    error: str | None
+
+
 class SlideRequest(BaseModel):
     """Request model for slide generation."""
     source_pdf: str
@@ -96,6 +106,100 @@ async def upload_pdf(file: UploadFile = File(...)) -> IngestResponse:
     result = await ingest_pdf(str(save_path))
     return IngestResponse(**result)
 
+
+@router.delete("/upload/{filename}", response_model=DeleteResponse)
+async def delete_pdf(filename: str):
+    """Delete a PDF and all associated data.
+
+    Removes: PDF file, text chunks, figure vectors,
+    figure images, page screenshots.
+    """
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(400, "Invalid filename.")
+
+    pdf_path = Path("data/uploads") / filename
+    if not pdf_path.exists():
+        raise HTTPException(404, f"PDF not found: {filename}")
+
+    files_deleted = 0
+
+    try:
+        pdf_path.unlink()
+        files_deleted += 1
+        print(f"[routes] Deleted PDF: {filename}")
+    except Exception as e:
+        print(f"[routes] Error deleting PDF: {e}")
+
+    from app.ingestion.qdrant_client import delete_pdf_data
+    qdrant_result = await delete_pdf_data(filename)
+
+    figures_dir = Path("data/processed/figures")
+    if figures_dir.exists():
+        pdf_stem = Path(filename).stem
+        for fig_file in figures_dir.glob("page_*.png"):
+            try:
+                if pdf_stem in fig_file.name:
+                    fig_file.unlink()
+                    files_deleted += 1
+            except Exception as e:
+                print(f"[routes] Error deleting figure: {e}")
+
+    images_dir = Path("data/processed/images")
+    if images_dir.exists():
+        pdf_stem = Path(filename).stem
+        for img_file in images_dir.glob("page_*.png"):
+            try:
+                if pdf_stem in img_file.name:
+                    img_file.unlink()
+                    files_deleted += 1
+            except Exception as e:
+                print(f"[routes] Error deleting screenshot: {e}")
+
+    return DeleteResponse(
+        source_pdf=filename,
+        text_chunks_deleted=qdrant_result["text_chunks_deleted"],
+        figures_deleted=qdrant_result["figures_deleted"],
+        files_deleted=files_deleted,
+        status="success",
+        error=None,
+    )
+
+
+@router.get("/uploads")
+async def list_uploads():
+    """List all uploaded PDFs with their ingestion status."""
+    uploads_dir = Path("data/uploads")
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+
+    pdfs = []
+    for pdf_file in uploads_dir.glob("*.pdf"):
+        try:
+            from app.ingestion.qdrant_client import _get_client
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            client = _get_client()
+            result = client.count(
+                collection_name="text_chunks",
+                count_filter=Filter(
+                    must=[FieldCondition(
+                        key="source_pdf",
+                        match=MatchValue(value=pdf_file.name)
+                    )]
+                ),
+                exact=True
+            )
+            chunk_count = result.count
+        except Exception as e:
+            print(f"[routes] Count error: {e}")
+            chunk_count = 0
+
+        pdfs.append({
+            "filename": pdf_file.name,
+            "size_mb": round(pdf_file.stat().st_size / (1024 * 1024), 2),
+            "chunk_count": chunk_count,
+            "ingested": chunk_count > 0
+        })
+
+    return {"pdfs": pdfs}
 
 @router.post("/query", response_model=QueryResponse)
 async def query_pdf(request: QueryRequest) -> QueryResponse:

@@ -262,6 +262,122 @@
             color: var(--slate-light);
         }
 
+        /* Book List */
+        .book-list {
+            margin-top: 24px;
+        }
+
+        .book-list h3 {
+            font-family: 'Playfair Display', serif;
+            font-size: 20px;
+            color: var(--slate);
+            margin-bottom: 16px;
+        }
+
+        .book-list-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .book-list-table th {
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--slate-light);
+            padding: 8px 12px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .book-list-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: middle;
+        }
+
+        .book-list-table .filename-cell {
+            font-weight: 600;
+            color: var(--slate);
+        }
+
+        .book-list-table .meta-cell {
+            color: var(--slate-light);
+            font-size: 14px;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-indexed {
+            background: #D1FAE5;
+            color: #065F46;
+        }
+
+        .badge-not-indexed {
+            background: #E5E7EB;
+            color: #6B7280;
+        }
+
+        .btn-delete {
+            padding: 6px 14px;
+            border: 1px solid #FCA5A5;
+            border-radius: var(--radius);
+            background: white;
+            color: #DC2626;
+            font-family: 'Source Sans 3', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-delete:hover {
+            background: #FEF2F2;
+        }
+
+        .book-list-empty {
+            text-align: center;
+            padding: 32px;
+            color: var(--slate-light);
+            font-size: 14px;
+        }
+
+        .status-msg {
+            margin-top: 12px;
+            padding: 10px 16px;
+            border-radius: var(--radius);
+            font-size: 14px;
+            display: none;
+        }
+
+        .status-msg.active {
+            display: block;
+        }
+
+        .status-msg.success {
+            background: #D1FAE5;
+            color: #065F46;
+            border: 1px solid #A7F3D0;
+        }
+
+        .status-msg.error {
+            background: #FEE2E2;
+            color: #991B1B;
+            border: 1px solid #FECACA;
+        }
+
+        .status-msg.info {
+            background: #DBEAFE;
+            color: #1E40AF;
+            border: 1px solid #93C5FD;
+        }
+
         /* QA Section */
         .qa-container {
             display: flex;
@@ -616,6 +732,12 @@
                         <p id="bookStats"></p>
                     </div>
                 </div>
+
+                <div class="book-list" id="bookList">
+                    <h3>Your Books</h3>
+                    <div id="statusMsg" class="status-msg"></div>
+                    <div id="bookListContent"></div>
+                </div>
             </section>
 
             <section id="qa" class="locked fade-in">
@@ -763,6 +885,78 @@
             askBtn.disabled = !hasBook || state.isQuerying;
         }
 
+        function showStatus(msg, type) {
+            const el = document.getElementById('statusMsg');
+            el.textContent = msg;
+            el.className = 'status-msg active ' + type;
+            if (type !== 'info') {
+                setTimeout(() => el.classList.remove('active'), 4000);
+            }
+        }
+
+        function renderBookList(pdfs) {
+            const container = document.getElementById('bookListContent');
+            if (!pdfs || pdfs.length === 0) {
+                container.innerHTML = '<div class="book-list-empty">No books uploaded yet</div>';
+                return;
+            }
+            let html = '<table class="book-list-table">' +
+                '<thead><tr><th>Filename</th><th>Size</th><th>Chunks</th><th>Status</th><th></th></tr></thead><tbody>';
+            for (const pdf of pdfs) {
+                const badgeClass = pdf.ingested ? 'badge-indexed' : 'badge-not-indexed';
+                const badgeText = pdf.ingested ? 'Indexed' : 'Not indexed';
+                html += '<tr>' +
+                    '<td class="filename-cell">' + pdf.filename + '</td>' +
+                    '<td class="meta-cell">' + pdf.size_mb + ' MB</td>' +
+                    '<td class="meta-cell">' + pdf.chunk_count + '</td>' +
+                    '<td><span class="badge ' + badgeClass + '">' + badgeText + '</span></td>' +
+                    '<td style="text-align: right;">' +
+                    '<button class="btn-delete" onclick="deletePDF(\'' + pdf.filename.replace(/'/g, "\\'") + '\')">Delete</button>' +
+                    '</td></tr>';
+            }
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        async function loadUploadedBooks() {
+            try {
+                const response = await fetch(API_BASE + '/uploads');
+                const data = await response.json();
+                renderBookList(data.pdfs);
+            } catch (e) {
+                console.error('Failed to load books:', e);
+            }
+        }
+
+        async function deletePDF(filename) {
+            if (!confirm('Delete ' + filename + ' and all its data?\nThis cannot be undone.')) {
+                return;
+            }
+            try {
+                showStatus('Deleting ' + filename + '...', 'info');
+                const response = await fetch(
+                    API_BASE + '/upload/' + encodeURIComponent(filename),
+                    { method: 'DELETE' }
+                );
+                const data = await response.json();
+                if (data.status === 'success') {
+                    showStatus('\u2713 ' + filename + ' deleted successfully', 'success');
+                    if (state.currentPdfName === filename) {
+                        state.uploadedBook = null;
+                        state.currentPdfName = null;
+                        state.qaHistory = [];
+                        state.generatedSlides = null;
+                        updateUI();
+                    }
+                    await loadUploadedBooks();
+                } else {
+                    showStatus('Error deleting ' + filename + ': ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (e) {
+                showStatus('Error deleting ' + filename + ': ' + e.message, 'error');
+            }
+        }
+
         // File Handling
         let selectedFile = null;
 
@@ -854,6 +1048,7 @@
                 bookStats.textContent = `${data.total_pages} pages · ${data.text_chunks_stored} chunks · ${data.figures_stored || 0} figures`;
                 bookCard.style.display = 'flex';
 
+                await loadUploadedBooks();
                 updateUI();
             } catch (err) {
                 console.error(err);
@@ -1078,7 +1273,8 @@
             observer.observe(el);
         });
 
-        // Initial UI update
+        // Initial load
+        loadUploadedBooks();
         updateUI();
     </script>
 </body>

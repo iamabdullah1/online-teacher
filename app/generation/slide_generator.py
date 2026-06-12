@@ -601,7 +601,7 @@ async def generate_slides(
 
         file_path = await _build_pptx(
             list(slides_data),
-            source_pdf,§za
+            source_pdf,
             include_title_slide,
             include_summary_slide
         )

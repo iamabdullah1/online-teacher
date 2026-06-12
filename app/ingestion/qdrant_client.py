@@ -13,6 +13,9 @@ from qdrant_client.models import (
     NamedVector,
     SearchRequest,
     Filter,
+    FieldCondition,
+    MatchValue,
+    FilterSelector,
 )
 
 load_dotenv()
@@ -33,7 +36,18 @@ def _get_client() -> QdrantClient:
     """Get or create Qdrant client instance."""
     global _client
     if _client is None:
-        _client = QdrantClient(url=QDRANT_URL)
+        QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
+        api_key = QDRANT_API_KEY
+        if api_key and "cloud.qdrant.io" in QDRANT_URL:
+            _client = QdrantClient(
+                url=QDRANT_URL,
+                api_key=api_key,
+                port=443,
+                https=True,
+                prefer_grpc=False
+            )
+        else:
+            _client = QdrantClient(url=QDRANT_URL)
         print(f"[qdrant_client] Connected to Qdrant at {QDRANT_URL}")
     return _client
 
@@ -64,6 +78,16 @@ async def init_collections() -> None:
             ),
         )
         print(f"[qdrant_client] Created collection: {TEXT_COLLECTION}")
+        # Add payload index for filtering by source_pdf
+        await loop.run_in_executor(
+            None,
+            lambda: client.create_payload_index(
+                collection_name=TEXT_COLLECTION,
+                field_name="source_pdf",
+                field_schema="keyword"
+            )
+        )
+        print(f"[qdrant_client] Created index: {TEXT_COLLECTION}.source_pdf")
 
     if VISUAL_COLLECTION not in existing_names:
         await loop.run_in_executor(
@@ -92,6 +116,16 @@ async def init_collections() -> None:
             )
         )
         print(f"[qdrant_client] Created collection: {FIGURES_COLLECTION}")
+        # Add payload index for filtering by source_pdf
+        await loop.run_in_executor(
+            None,
+            lambda: client.create_payload_index(
+                collection_name=FIGURES_COLLECTION,
+                field_name="source_pdf",
+                field_schema="keyword"
+            )
+        )
+        print(f"[qdrant_client] Created index: {FIGURES_COLLECTION}.source_pdf")
 
 
 async def upsert_text_chunks(chunks: list[dict]) -> int:
@@ -359,3 +393,64 @@ async def search_figures_collection(
         }
         for r in results.points
     ]
+
+
+async def delete_pdf_data(source_pdf: str) -> dict:
+    """Delete all Qdrant data associated with a PDF.
+
+    Args:
+        source_pdf: PDF filename e.g. "book.pdf"
+
+    Returns:
+        Dict with keys:
+          - text_chunks_deleted: bool
+          - figures_deleted: bool
+          - status: str
+    """
+    loop = asyncio.get_event_loop()
+    client = _get_client()
+
+    pdf_filter = Filter(
+        must=[
+            FieldCondition(
+                key="source_pdf",
+                match=MatchValue(value=source_pdf)
+            )
+        ]
+    )
+    selector = FilterSelector(filter=pdf_filter)
+
+    text_chunks_deleted = False
+    figures_deleted = False
+
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: client.delete(
+                collection_name=TEXT_COLLECTION,
+                points_selector=selector,
+            )
+        )
+        print(f"[qdrant_client] Deleted text chunks for {source_pdf}")
+        text_chunks_deleted = True
+    except Exception as e:
+        print(f"[qdrant_client] Error deleting text chunks: {e}")
+
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: client.delete(
+                collection_name=FIGURES_COLLECTION,
+                points_selector=selector,
+            )
+        )
+        print(f"[qdrant_client] Deleted figures for {source_pdf}")
+        figures_deleted = True
+    except Exception as e:
+        print(f"[qdrant_client] Error deleting figures: {e}")
+
+    return {
+        "text_chunks_deleted": text_chunks_deleted,
+        "figures_deleted": figures_deleted,
+        "status": "success",
+    }
