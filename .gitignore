@@ -6,4 +6,8 @@ __pycache__/
 *.pdf
 data/
 .codegraph/
+.code-review-graph/
+.pytest_cache/
+.testsprite/
+htmlcov/
 colpali_service/__pycache__/
