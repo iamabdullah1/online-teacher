@@ -835,7 +835,9 @@
     </div>
 
     <script>
-        const API_BASE = 'http://localhost:8000/api/v1';
+        const API_BASE = window.location.hostname === 'localhost'
+    ? 'http://localhost:8000/api/v1'
+    : 'https://abdullah7570-online-teacher-api.hf.space/api/v1';
 
         const state = {
             uploadedBook: null,
