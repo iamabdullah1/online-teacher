@@ -182,7 +182,7 @@ async def extract_pages(pdf_path: str) -> list[dict]:
             )
 
             if is_visual or len(text.split()) < MIN_WORDS_FOR_TEXT_PAGE:
-                # Visual page: use screenshot for ColPali embedding
+                # Visual page: use screenshot for figure extraction
                 image_path = screenshot_path
                 chunks = []
             else:

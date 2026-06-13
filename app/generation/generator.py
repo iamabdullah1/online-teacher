@@ -84,9 +84,7 @@ def _build_messages(query: str, context: str) -> list[dict[str, Any]]:
                 "You are an expert teacher assistant. "
                 "Answer the student's question using ONLY "
                 "the provided context from the textbook. "
-                "If the context lacks enough information say: "
-                "'I could not find enough information in the "
-                "textbook to answer this question.' "
+             
                 "Always cite sources using [Source N] notation. "
                 "Be clear, accurate, and educational."
             )
@@ -125,6 +123,18 @@ async def generate_answer(
             "answer": "I could not find relevant information.",
             "sources": [],
             "context_used": 0,
+            "status": "success",
+            "error": None
+        }
+
+    # Skip Cohere call if all results are below relevance threshold
+    max_score = max(r.get("score", 0) for r in retrieved_results)
+    if max_score < 0.3:
+        return {
+            "answer": "I could not find enough information in the textbook to answer this question.",
+            "sources": [{"page_num": r.get("page_num", 0), "source_pdf": r.get("source_pdf", "")}
+                        for r in retrieved_results[:3]],
+            "context_used": len(retrieved_results[:MAX_CONTEXT_CHUNKS]),
             "status": "success",
             "error": None
         }

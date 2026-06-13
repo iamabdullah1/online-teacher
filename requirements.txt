@@ -14,7 +14,6 @@ charset-normalizer==3.4.7
 click==8.4.1
 cloudinary==1.44.2
 cohere==6.1.0
-colpali_engine==0.3.16
 datasets==4.8.5
 dill==0.4.1
 fastapi==0.136.1

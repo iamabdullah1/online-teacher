@@ -8,27 +8,17 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
-  colpali:
-    build: ./colpali_service
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./data:/data
-    environment:
-      - PYTHONUNBUFFERED=1
-
   app:
     build: .
     ports:
       - "8000:8000"
     depends_on:
       - qdrant
-      - colpali
     env_file:
       - .env
     environment:
       - QDRANT_URL=http://qdrant:6333
-      - COLPALI_SERVICE_URL=http://colpali:8001
+
     volumes:
       - ./data:/app/data
 

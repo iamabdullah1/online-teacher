@@ -25,9 +25,8 @@ done
 echo "   ✅ Docker is ready"
 
 # Step 1 — Kill any processes on our ports
-echo "→ Clearing ports 8000 and 8001..."
+echo "→ Clearing port 8000..."
 kill -9 $(lsof -t -i:8000) 2>/dev/null
-kill -9 $(lsof -t -i:8001) 2>/dev/null
 sleep 2
 
 # Step 2 — Start Qdrant
@@ -38,13 +37,7 @@ if [ $? -ne 0 ]; then
 fi
 sleep 3
 
-# Step 3 — Start ColPali
-echo "→ Starting ColPali microservice..."
-cd ~/online-teacher
-docker-compose up -d colpali
-sleep 5
-
-# Step 4 — Verify Qdrant
+# Step 3 — Verify Qdrant
 echo "→ Verifying Qdrant..."
 until curl -s http://localhost:6333 > /dev/null; do
     echo "   Waiting for Qdrant..."
@@ -52,25 +45,11 @@ until curl -s http://localhost:6333 > /dev/null; do
 done
 echo "   ✅ Qdrant is ready"
 
-# Step 5 — Verify ColPali
-echo "→ Waiting for ColPali to load model (this takes 60-90s)..."
-ATTEMPTS=0
-until curl -s http://localhost:8001/health | grep -q "ok"; do
-    ATTEMPTS=$((ATTEMPTS+1))
-    if [ $ATTEMPTS -gt 30 ]; then
-        echo "   ⚠️  ColPali taking too long — continuing anyway"
-        break
-    fi
-    echo "   Waiting for ColPali... (${ATTEMPTS}/30)"
-    sleep 5
-done
-echo "   ✅ ColPali is ready"
-
-# Step 6 — Activate venv
+# Step 4 — Activate venv
 echo "→ Activating virtual environment..."
 source ~/online-teacher/.venv/bin/activate
 
-# Step 7 — Preload BGE-M3 model before first request
+# Step 5 — Preload BGE-M3 model before first request
 echo "→ Preloading BGE-M3 model (one-time, ~3 minutes)..."
 python3 -c "
 from FlagEmbedding import BGEM3FlagModel
@@ -79,7 +58,7 @@ model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
 print('BGE-M3 ready.')
 " && echo "   ✅ BGE-M3 preloaded"
 
-# Step 8 — Start main app
+# Step 6 — Start main app
 echo "→ Starting main app on port 8000..."
 echo "========================================"
 echo "  Platform ready!"

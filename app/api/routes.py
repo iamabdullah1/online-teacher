@@ -211,28 +211,11 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
     from app.ingestion.text_embedder import embed_query
     query_emb = await embed_query(request.question)
 
-    if request.text_only:
-        results = await retrieve_text_only(
-            query_emb["dense_vector"],
-            query_emb["sparse_vector"],
-            limit=request.limit
-        )
-    else:
-        # Try visual search but don't fail if unavailable
-        query_visual = None
-        try:
-            from app.ingestion.visual_embedder import embed_query_image
-            query_visual = await embed_query_image(request.question)
-        except Exception as e:
-            print(f"[routes] Visual embedding skipped: {e}")
-
-        results = await retrieve(
-            request.question,
-            query_emb["dense_vector"],
-            query_emb["sparse_vector"],
-            query_visual=query_visual,
-            fusion_limit=request.limit
-        )
+    results = await retrieve_text_only(
+        query_emb["dense_vector"],
+        query_emb["sparse_vector"],
+        limit=request.limit
+    )
 
     answer = await generate_answer(request.question, results)
     return QueryResponse(**answer)
@@ -249,11 +232,9 @@ async def query_stream(question: str, text_only: bool = False):
     query_emb = await embed_query(question)
 
     results = await retrieve(
-        question,
         query_emb["dense_vector"],
         query_emb["sparse_vector"],
-        query_visual=None,
-        fusion_limit=5
+        limit=5
     )
 
     async def event_generator():
@@ -329,7 +310,7 @@ async def generate_slides_endpoint(request: SlideRequest):
                     "match": {"value": request.source_pdf}
                 }]
             },
-            limit=500,
+            limit=200,
             with_payload=True
         )
         chunks = [point.payload for point in results[0]]

@@ -16,7 +16,8 @@ from PIL import Image as PILImage
 
 import cohere
 
-from app.ingestion.visual_indexer import search_figures
+from app.ingestion.text_embedder import embed_chunks
+from app.ingestion.qdrant_client import search_figures_collection
 
 load_dotenv()
 
@@ -55,66 +56,79 @@ STYLE_INSTRUCTIONS = {
 }
 
 
-async def _find_best_figure_for_slide(
-    slide_title: str,
-    slide_chapter: str,
+async def _find_figures_for_slides(
+    slides_data: list[dict[str, Any]],
     source_pdf: str,
-    slide_page_hint: int = 0,
     similarity_threshold: float = 0.45
-) -> str | None:
+) -> list[str | None]:
+    """Pre-compute best figure paths for all slides concurrently.
+
+    Batch-embeds all slide titles in one BGE-M3 call and searches
+    Qdrant for all slides in parallel.
+
+    Args:
+        slides_data: List of slide dicts with title and chapter.
+        source_pdf: PDF filename for Qdrant filter.
+        similarity_threshold: Minimum combined score to accept a figure.
+
+    Returns:
+        List of absolute image paths (or None for slides without matches).
     """
-    Find the most relevant cropped figure for a slide.
-    Combines description similarity with page proximity.
-    """
-    if not slide_title:
-        return None
+    if not slides_data:
+        return []
+
+    queries = [
+        f"{s.get('chapter', '')}: {s.get('title', '')}".strip(": ")
+        for s in slides_data
+    ]
 
     try:
-        query = f"{slide_chapter}: {slide_title}".strip(": ")
-        print(f"[slide_generator] Searching figure for: {query}")
+        query_embeddings = await embed_chunks(queries)
+    except Exception as e:
+        print(f"[slide_generator] Batch embed error: {e}")
+        return [None] * len(slides_data)
 
-        results = await search_figures(query, source_pdf, limit=5)
+    async def _search_one(emb: dict) -> list[dict]:
+        return await search_figures_collection(
+            dense_vector=emb["dense_vector"],
+            source_pdf=source_pdf,
+            limit=5
+        )
 
+    all_results = await asyncio.gather(*[
+        _search_one(emb) for emb in query_embeddings
+    ])
+
+    figures_dir = Path("data/processed/figures")
+    image_paths: list[str | None] = []
+
+    for idx, results in enumerate(all_results):
         if not results:
-            print(f"[slide_generator] No figures found for: {query}")
-            return None
+            image_paths.append(None)
+            continue
 
-        best_path = None
         best_combined = 0.0
         best_result = None
 
         for result in results:
             desc_score = result.get("score", 0)
-
-            if slide_page_hint > 0:
-                page_diff = abs(result.get("page_num", 0) - slide_page_hint)
-                proximity_bonus = max(0, 0.15 - (page_diff * 0.01))
-            else:
-                proximity_bonus = 0
-
-            combined = (desc_score * 0.85) + proximity_bonus
-
+            combined = desc_score * 0.85
             if combined > best_combined:
                 best_combined = combined
                 best_result = result
 
         if best_result and best_combined >= similarity_threshold:
-            figures_dir = Path("data/processed/figures")
             figure_filename = best_result.get("figure_filename", "")
             figure_path = figures_dir / figure_filename if figure_filename else None
             if figure_path and figure_path.exists():
-                print(f"[slide_generator] Match: {figure_path.name} (score={best_combined:.3f})")
-                return str(figure_path)
+                print(f"[slide_generator] Figure for slide {idx}: {figure_path.name} (score={best_combined:.3f})")
+                image_paths.append(str(figure_path))
             else:
-                print(f"[slide_generator] Figure not found: {figure_filename}")
-                return None
+                image_paths.append(None)
         else:
-            print(f"[slide_generator] No match above threshold (best={best_combined:.3f})")
-            return None
+            image_paths.append(None)
 
-    except Exception as e:
-        print(f"[slide_generator] Figure search error: {e}")
-        return None
+    return image_paths
 
 
 def _find_matching_image_fallback(
@@ -154,9 +168,14 @@ def _find_matching_image_fallback(
     return valid[page_index]["screenshot_path"]
 
 
-def _get_cohere_client() -> cohere.ClientV2:
-    """Get Cohere client."""
-    return cohere.ClientV2(api_key=COHERE_API_KEY)
+_cohere_client: cohere.AsyncClientV2 | None = None
+
+def _get_cohere_client() -> cohere.AsyncClientV2:
+    """Get or create async Cohere client (reused across calls)."""
+    global _cohere_client
+    if _cohere_client is None:
+        _cohere_client = cohere.AsyncClientV2(api_key=COHERE_API_KEY)
+    return _cohere_client
 
 
 async def _extract_topics(
@@ -220,19 +239,14 @@ Rules:
 - Return ONLY the JSON array, no other text
 """
 
-    loop = asyncio.get_event_loop()
     client = _get_cohere_client()
-
-    def _call():
-        response = client.chat(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=1000,
-            temperature=0.3
-        )
-        return response.message.content[0].text
-
-    raw = await loop.run_in_executor(None, _call)
+    response = await client.chat(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1000,
+        temperature=0.3
+    )
+    raw = response.message.content[0].text
 
     try:
         raw = raw.strip()
@@ -327,19 +341,14 @@ Rules:
 - Return ONLY the JSON object, no other text
 """
 
-    loop = asyncio.get_event_loop()
     client = _get_cohere_client()
-
-    def _call():
-        response = client.chat(
-            model=MODEL_NAME,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=600,
-            temperature=0.4
-        )
-        return response.message.content[0].text
-
-    raw = await loop.run_in_executor(None, _call)
+    response = await client.chat(
+        model=MODEL_NAME,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=600,
+        temperature=0.4
+    )
+    raw = response.message.content[0].text
 
     try:
         raw = raw.strip()
@@ -366,7 +375,8 @@ async def _build_pptx(
     slides_data: list[dict[str, Any]],
     source_pdf: str,
     include_title_slide: bool,
-    include_summary_slide: bool
+    include_summary_slide: bool,
+    slide_image_paths: list[str | None] | None = None
 ) -> str:
     """Build a .pptx file from slide content data.
 
@@ -375,6 +385,8 @@ async def _build_pptx(
         source_pdf: Original PDF filename for title slide
         include_title_slide: Whether to add a title slide
         include_summary_slide: Whether to add a summary slide
+        slide_image_paths: Pre-computed image paths (one per slide).
+                           If None, no images are added.
 
     Returns:
         Absolute path to saved .pptx file as string
@@ -426,11 +438,7 @@ async def _build_pptx(
         slide = prs.slides.add_slide(layout)
         set_bg(slide, BG_COLOR)
 
-        image_path = await _find_best_figure_for_slide(
-            slide_title=slide_data.get("title", ""),
-            slide_chapter=slide_data.get("chapter", ""),
-            source_pdf=source_pdf
-        )
+        image_path = slide_image_paths[slide_index] if slide_image_paths else None
         has_image = image_path is not None
 
         if slide_data.get("chapter"):
@@ -599,11 +607,18 @@ async def generate_slides(
 
         print(f"[slide_generator] Generated content for {len(slides_data)} slides")
 
+        # Pre-compute all figure paths in parallel before building slides
+        slide_image_paths = await _find_figures_for_slides(
+            slides_data, source_pdf
+        )
+        print(f"[slide_generator] Found figures for {sum(1 for p in slide_image_paths if p)}/{len(slides_data)} slides")
+
         file_path = await _build_pptx(
             list(slides_data),
             source_pdf,
             include_title_slide,
-            include_summary_slide
+            include_summary_slide,
+            slide_image_paths=slide_image_paths
         )
 
         return {
