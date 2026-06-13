@@ -1150,8 +1150,15 @@
             const answerEl = msgEl.querySelector('.qa-answer');
 
             try {
+                // Build conversation history (last 6 exchanges, alternating user/assistant)
+                const recentHistory = state.qaHistory.slice(-6).flatMap(qa => [
+                    { role: "user", content: qa.question },
+                    { role: "assistant", content: qa.answer }
+                ]);
+                const historyParam = encodeURIComponent(JSON.stringify(recentHistory));
+
                 const response = await fetch(
-                    `${API_BASE}/query/stream?question=${encodeURIComponent(question)}&text_only=false`
+                    `${API_BASE}/query/stream?question=${encodeURIComponent(question)}&text_only=false&history=${historyParam}`
                 );
                 if (!response.ok) throw new Error(`Query failed: ${response.status}`);
 

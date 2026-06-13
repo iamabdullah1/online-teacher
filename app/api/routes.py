@@ -27,6 +27,7 @@ class QueryRequest(BaseModel):
     question: str
     text_only: bool = False
     limit: int = 5
+    history: list[dict] = []
 
 
 class QueryResponse(BaseModel):
@@ -217,15 +218,21 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
         limit=request.limit
     )
 
-    answer = await generate_answer(request.question, results)
+    answer = await generate_answer(request.question, results, history=request.history)
     return QueryResponse(**answer)
 
 
 @router.get("/query/stream")
-async def query_stream(question: str, text_only: bool = False):
+async def query_stream(question: str, text_only: bool = False, history: str = "[]"):
     """Stream answer token by token using SSE."""
     if not question.strip():
         raise HTTPException(400, "Question cannot be empty.")
+
+    # Parse history from JSON string query param
+    try:
+        history_list = json.loads(history)
+    except (json.JSONDecodeError, TypeError):
+        history_list = []
 
     # Get embeddings for the query
     from app.ingestion.text_embedder import embed_query
@@ -238,7 +245,7 @@ async def query_stream(question: str, text_only: bool = False):
     )
 
     async def event_generator():
-        async for token in generate_answer_stream(question, results):
+        async for token in generate_answer_stream(question, results, history=history_list):
             yield f"data: {token}\n\n"
         yield "data: [DONE]\n\n"
 

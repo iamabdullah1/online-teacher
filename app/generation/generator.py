@@ -67,48 +67,54 @@ def _format_context(results: list[dict[str, Any]]) -> str:
     return "\n\n".join(context_parts)
 
 
-def _build_messages(query: str, context: str) -> list[dict[str, Any]]:
+def _build_messages(query: str, context: str, history: list[dict] | None = None) -> list[dict[str, Any]]:
     """Build messages list for Cohere Chat API v2.
 
     Args:
         query: Student question string.
         context: Formatted context from _format_context()
+        history: Previous conversation turns as {role, content} dicts.
 
     Returns:
         List of message dicts for Cohere API.
     """
-    return [
+    messages = [
         {
             "role": "system",
             "content": (
                 "You are an expert teacher assistant. "
                 "Answer the student's question using ONLY "
                 "the provided context from the textbook. "
-             
+
                 "Always cite sources using [Source N] notation. "
                 "Be clear, accurate, and educational."
             )
-        },
-        {
-            "role": "user",
-            "content": (
-                f"Context from textbook:\n\n{context}\n\n"
-                f"Student question: {query}\n\n"
-                f"Answer based only on the context above:"
-            )
         }
     ]
+    if history:
+        messages.extend(history)
+    messages.append({
+        "role": "user",
+        "content": (
+            f"Context from textbook:\n\n{context}\n\n"
+            f"Student question: {query}\n\n"
+            f"Answer based only on the context above:"
+        )
+    })
+    return messages
 
 
 async def generate_answer(
     query: str,
     retrieved_results: list[dict[str, Any]],
+    history: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Generate grounded answer from retrieved context via Cohere.
 
     Args:
         query: Student question string.
         retrieved_results: Results from retriever.retrieve()
+        history: Previous conversation turns as {role, content} dicts.
 
     Returns:
         Dict with keys:
@@ -140,7 +146,7 @@ async def generate_answer(
         }
 
     context = _format_context(retrieved_results)
-    messages = _build_messages(query, context)
+    messages = _build_messages(query, context, history=history)
     sources = [
         {
             "index": i + 1,
@@ -188,18 +194,20 @@ async def generate_answer(
 async def generate_answer_stream(
     query: str,
     retrieved_results: list[dict[str, Any]],
+    history: list[dict] | None = None,
 ):
     """Stream answer token by token via Cohere.
 
     Args:
         query: Student question string.
         retrieved_results: Results from retriever.retrieve()
+        history: Previous conversation turns as {role, content} dicts.
 
     Yields:
         str chunks of the answer as they stream in.
     """
     context = _format_context(retrieved_results)
-    messages = _build_messages(query, context)
+    messages = _build_messages(query, context, history=history)
     client = _get_client()
     async for event in client.chat_stream(
         model=MODEL_NAME,
