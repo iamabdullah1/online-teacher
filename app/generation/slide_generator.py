@@ -342,13 +342,21 @@ Rules:
 """
 
     client = _get_cohere_client()
-    response = await client.chat(
-        model=MODEL_NAME,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=600,
-        temperature=0.4
-    )
-    raw = response.message.content[0].text
+    try:
+        response = await client.chat(
+            model=MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
+            temperature=0.4
+        )
+        raw = response.message.content[0].text
+    except Exception as e:
+        print(f"[slide_generator] Cohere API error for '{topic.get('topic', '')}': {e}")
+        return {
+            "title": topic.get("topic", "Slide"),
+            "bullets": [f"Key point {i+1}" for i in range(bullets_per_slide)],
+            "chapter": topic.get("chapter", "")
+        }
 
     try:
         raw = raw.strip()

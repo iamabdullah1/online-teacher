@@ -1,5 +1,6 @@
 """FastAPI routes for the Online Teacher Platform."""
 
+import json
 import os
 import shutil
 from pathlib import Path
