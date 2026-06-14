@@ -132,6 +132,34 @@ async def delete_pdf(filename: str):
     except Exception as e:
         print(f"[routes] Error deleting PDF: {e}")
 
+    # Collect Cloudinary public IDs before Qdrant delete
+    cloudinary_ids: list[str] = []
+    try:
+        from app.ingestion.qdrant_client import _get_client
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        client = _get_client()
+        scroll_result = client.scroll(
+            collection_name="visual_index",
+            scroll_filter=Filter(
+                must=[FieldCondition(key="source_pdf", match=MatchValue(value=filename))]
+            ),
+            with_payload=True,
+            limit=200
+        )
+        for point in scroll_result[0]:
+            pid = point.payload.get("cloudinary_public_id", "")
+            if pid:
+                cloudinary_ids.append(pid)
+    except Exception as e:
+        print(f"[routes] Error collecting Cloudinary IDs: {e}")
+
+    # Delete Cloudinary images
+    if cloudinary_ids:
+        from app.ingestion.cloudinary_storage import delete_figure
+        for pid in cloudinary_ids:
+            delete_figure(pid)
+        print(f"[routes] Deleted {len(cloudinary_ids)} Cloudinary images")
+
     from app.ingestion.qdrant_client import delete_pdf_data
     qdrant_result = await delete_pdf_data(filename)
 

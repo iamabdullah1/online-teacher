@@ -124,7 +124,18 @@ async def _find_figures_for_slides(
                 print(f"[slide_generator] Figure for slide {idx}: {figure_path.name} (score={best_combined:.3f})")
                 image_paths.append(str(figure_path))
             else:
-                image_paths.append(None)
+                # Fallback: download from Cloudinary
+                cloudinary_url = best_result.get("cloudinary_url", "")
+                if cloudinary_url and figure_filename:
+                    from app.ingestion.cloudinary_storage import download_figure
+                    dl_path = download_figure(cloudinary_url, figure_filename)
+                    if dl_path:
+                        print(f"[slide_generator] Downloaded figure from Cloudinary: {figure_filename}")
+                        image_paths.append(dl_path)
+                    else:
+                        image_paths.append(None)
+                else:
+                    image_paths.append(None)
         else:
             image_paths.append(None)
 

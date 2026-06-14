@@ -122,7 +122,22 @@ async def ingest_pdf(pdf_path: str) -> dict:
                     fig["ingested_at"] = ingested_at
                     fig["figure_filename"] = Path(fig["figure_path"]).name
 
-        print(f"[pipeline] Step 4: Attached embeddings ({time.time()-t3:.1f}s)")
+        # Upload figures to Cloudinary for persistent storage
+        from app.ingestion.cloudinary_storage import upload_figure
+        if figures:
+            loop = asyncio.get_event_loop()
+            upload_tasks = []
+            for fig in figures:
+                public_id = f"{pdf_name.replace('.pdf','')}_{Path(fig['figure_path']).stem}"
+                upload_tasks.append(
+                    loop.run_in_executor(None, upload_figure, fig["figure_path"], public_id)
+                )
+            cloudinary_results = await asyncio.gather(*upload_tasks)
+            for fig, cr in zip(figures, cloudinary_results):
+                fig["cloudinary_url"] = cr.get("url", "")
+                fig["cloudinary_public_id"] = cr.get("public_id", "")
+
+        print(f"[pipeline] Step 4: Attached embeddings + Cloudinary uploads ({time.time()-t3:.1f}s)")
 
         # Step 5: Run Qdrant upserts CONCURRENTLY
         t4 = time.time()

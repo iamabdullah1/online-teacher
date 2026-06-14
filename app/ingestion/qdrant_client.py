@@ -244,6 +244,8 @@ async def upsert_figures(figures: list[dict]) -> int:
                 "page_num": fig.get("page_num", 0),
                 "figure_index": fig.get("figure_index", 0),
                 "figure_filename": fig.get("figure_filename", ""),
+                "cloudinary_url": fig.get("cloudinary_url", ""),
+                "cloudinary_public_id": fig.get("cloudinary_public_id", ""),
                 "doc_id": fig.get("doc_id", ""),
                 "ingested_at": fig.get("ingested_at", "")
             }

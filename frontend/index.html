@@ -1194,6 +1194,7 @@
                         }
                         if (data.startsWith('[ERROR]')) {
                             answerEl.innerHTML = `<span class="error">${data.slice(7)}</span>`;
+                            state.qaHistory.push({ question, answer: '', sources: [] });
                             continue;
                         }
                         if (!hasContent) {
