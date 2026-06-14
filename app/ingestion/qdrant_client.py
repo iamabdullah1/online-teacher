@@ -20,7 +20,7 @@ from qdrant_client.models import (
 
 load_dotenv()
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+QDRANT_URL = os.getenv("QDRANT_URL", "")
 TEXT_COLLECTION = "text_chunks"
 FIGURES_COLLECTION = "visual_index"
 DENSE_DIM = 1024
@@ -34,19 +34,23 @@ def _get_client() -> QdrantClient:
     """Get or create Qdrant client instance."""
     global _client
     if _client is None:
-        QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
-        api_key = QDRANT_API_KEY
-        if api_key and "cloud.qdrant.io" in QDRANT_URL:
-            _client = QdrantClient(
-                url=QDRANT_URL,
-                api_key=api_key,
-                port=443,
-                https=True,
-                prefer_grpc=False
-            )
+        if not QDRANT_URL:
+            _client = QdrantClient(":memory:")
+            print("[qdrant_client] Using in-memory Qdrant (no QDRANT_URL set)")
         else:
-            _client = QdrantClient(url=QDRANT_URL)
-        print(f"[qdrant_client] Connected to Qdrant at {QDRANT_URL}")
+            QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
+            api_key = QDRANT_API_KEY
+            if api_key and "cloud.qdrant.io" in QDRANT_URL:
+                _client = QdrantClient(
+                    url=QDRANT_URL,
+                    api_key=api_key,
+                    port=443,
+                    https=True,
+                    prefer_grpc=False
+                )
+            else:
+                _client = QdrantClient(url=QDRANT_URL)
+            print(f"[qdrant_client] Connected to Qdrant at {QDRANT_URL}")
     return _client
 
 

@@ -208,18 +208,28 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
     if not request.question.strip():
         raise HTTPException(400, "Question cannot be empty.")
 
-    # Get embeddings for the query
-    from app.ingestion.text_embedder import embed_query
-    query_emb = await embed_query(request.question)
+    try:
+        # Get embeddings for the query
+        from app.ingestion.text_embedder import embed_query
+        query_emb = await embed_query(request.question)
 
-    results = await retrieve_text_only(
-        query_emb["dense_vector"],
-        query_emb["sparse_vector"],
-        limit=request.limit
-    )
+        results = await retrieve_text_only(
+            query_emb["dense_vector"],
+            query_emb["sparse_vector"],
+            limit=request.limit
+        )
 
-    answer = await generate_answer(request.question, results, history=request.history)
-    return QueryResponse(**answer)
+        answer = await generate_answer(request.question, results, history=request.history)
+        return QueryResponse(**answer)
+    except Exception as e:
+        print(f"[routes] Error in query_pdf: {e}")
+        return QueryResponse(
+            answer="",
+            sources=[],
+            context_used=0,
+            status="error",
+            error=str(e)
+        )
 
 
 @router.get("/query/stream")
@@ -234,25 +244,39 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
     except (json.JSONDecodeError, TypeError):
         history_list = []
 
-    # Get embeddings for the query
-    from app.ingestion.text_embedder import embed_query
-    query_emb = await embed_query(question)
+    try:
+        # Get embeddings for the query
+        from app.ingestion.text_embedder import embed_query
+        query_emb = await embed_query(question)
 
-    results = await retrieve(
-        query_emb["dense_vector"],
-        query_emb["sparse_vector"],
-        limit=5
-    )
+        results = await retrieve(
+            query_emb["dense_vector"],
+            query_emb["sparse_vector"],
+            limit=5
+        )
 
-    async def event_generator():
-        async for token in generate_answer_stream(question, results, history=history_list):
-            yield f"data: {token}\n\n"
-        yield "data: [DONE]\n\n"
+        async def event_generator():
+            try:
+                async for token in generate_answer_stream(question, results, history=history_list):
+                    yield f"data: {token}\n\n"
+            except Exception as e:
+                print(f"[routes] Error in stream: {e}")
+                yield f"data: [ERROR] {e}\n\n"
+            yield "data: [DONE]\n\n"
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream"
-    )
+        return StreamingResponse(
+            event_generator(),
+            media_type="text/event-stream"
+        )
+    except Exception as e:
+        print(f"[routes] Error in query_stream: {e}")
+        async def error_generator():
+            yield f"data: [ERROR] {e}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(
+            error_generator(),
+            media_type="text/event-stream"
+        )
 
 
 @router.get("/health")

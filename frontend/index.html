@@ -1185,8 +1185,15 @@
                     for (const line of lines) {
                         if (!line.startsWith('data: ')) continue;
                         const data = line.slice(6);
+                        if (!data) continue;
                         if (data === '[DONE]') {
-                            state.qaHistory.push({ question, answer: fullAnswer, sources: [] });
+                            if (hasContent) {
+                                state.qaHistory.push({ question, answer: fullAnswer, sources: [] });
+                            }
+                            continue;
+                        }
+                        if (data.startsWith('[ERROR]')) {
+                            answerEl.innerHTML = `<span class="error">${data.slice(7)}</span>`;
                             continue;
                         }
                         if (!hasContent) {
@@ -1199,8 +1206,8 @@
                     }
                 }
             } catch (err) {
-                msgEl.remove();
-                showError(err.message);
+                answerEl.innerHTML = `<span class="error">${err.message}</span>`;
+                state.qaHistory.push({ question, answer: '', sources: [] });
             } finally {
                 state.isQuerying = false;
                 askBtn.disabled = !state.uploadedBook;
