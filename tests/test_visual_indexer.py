@@ -1,8 +1,6 @@
 """Tests for visual_indexer module."""
 import pytest
 import asyncio
-import json
-import base64
 import io
 from pathlib import Path
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -77,68 +75,60 @@ async def test_extract_figures_empty_page(tmp_path):
     assert isinstance(figures, list)
 
 
-async def test_describe_figure_returns_dict(sample_pdf_with_image):
-    """Test that describe_figure returns a dict with expected keys."""
-    from app.ingestion.visual_indexer import extract_figures_from_page, describe_figure
+async def test_describe_from_page_text_returns_dict():
+    """Test that _describe_from_page_text returns a dict with expected keys."""
+    from app.ingestion.visual_indexer import _describe_from_page_text
 
-    with patch("app.ingestion.visual_indexer.cohere.ClientV2") as mock:
-        mock_response = MagicMock()
-        mock_response.message.content[0].text = json.dumps({
-            "description": "A blue rectangle representing a cell membrane",
-            "keywords": ["cell", "membrane", "biology"],
-            "has_diagram": True,
-            "has_table": False,
-            "has_formula": False,
-            "subject": "cell biology"
-        })
-        mock.return_value.chat.return_value = mock_response
+    figure = {
+        "figure_path": "/fake/path.png",
+        "page_num": 1,
+        "figure_index": 0,
+        "width": 300,
+        "height": 200
+    }
+    result = _describe_from_page_text(
+        figure,
+        page_text="The cell membrane is a phospholipid bilayer diagram.",
+        chapter="Cell Biology",
+        section_title="Membrane Structure"
+    )
+    assert "description" in result
+    assert "keywords" in result
+    assert "has_diagram" in result
+    assert "has_table" in result
+    assert "has_formula" in result
+    assert "subject" in result
+    assert isinstance(result["keywords"], list)
+    assert "Cell Biology" in result["description"]
+    assert "Membrane" in result["description"]
 
-        figures = extract_figures_from_page(sample_pdf_with_image, 0)
-        if figures:
-            result = await describe_figure(figures[0], "Cell biology text")
-            assert "description" in result
-            assert "keywords" in result
-            assert "has_diagram" in result
-            assert isinstance(result["keywords"], list)
 
+async def test_describe_from_page_text_no_text():
+    """Test fallback when no page text is available."""
+    from app.ingestion.visual_indexer import _describe_from_page_text
 
-async def test_image_to_base64():
-    """Test base64 encoding of images."""
-    from app.ingestion.visual_indexer import _image_to_base64
-
-    img_path = Path("/tmp/test_image.png")
-    PILImage.new("RGB", (100, 100), "red").save(str(img_path))
-
-    b64 = _image_to_base64(str(img_path))
-    assert isinstance(b64, str)
-    assert len(b64) > 0
-
-    decoded = base64.b64decode(b64)
-    assert len(decoded) > 0
-
-    img_path.unlink()
+    figure = {"figure_path": "/fake/path.png", "page_num": 5}
+    result = _describe_from_page_text(figure)
+    assert "Figure on page 5" in result["description"]
 
 
 async def test_index_pdf_figures_returns_list(sample_pdf_with_image):
     """Test that index_pdf_figures returns a list."""
     from app.ingestion.visual_indexer import index_pdf_figures
 
-    with patch("app.ingestion.visual_indexer.describe_figure",
-               new_callable=AsyncMock) as mock_desc:
-        mock_desc.return_value = {
-            "figure_path": "/fake/path.png",
-            "page_num": 0,
-            "description": "test figure",
-            "keywords": ["test"],
-            "has_diagram": True,
-            "has_table": False,
-            "has_formula": False,
-            "subject": "test",
-            "indexed_at": "2026-01-01T00:00:00"
-        }
-        pages = [{"page_num": 0, "text": "Cell biology text"}]
-        results = await index_pdf_figures(sample_pdf_with_image, pages)
-        assert isinstance(results, list)
+    # Note: index_pdf_figures now calls _describe_from_page_text
+    # synchronously inside the loop, no async mocking needed.
+    pages = [{
+        "page_num": 0,
+        "text": "Cell biology text about membrane diagram.",
+        "chapter": "Cell Biology",
+        "section_title": "Membrane Structure"
+    }]
+    results = await index_pdf_figures(sample_pdf_with_image, pages)
+    assert isinstance(results, list)
+    if results:
+        assert "description" in results[0]
+        assert "keywords" in results[0]
 
 
 async def test_search_figures_returns_list():

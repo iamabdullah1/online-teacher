@@ -83,9 +83,10 @@ def _build_messages(query: str, context: str, history: list[dict] | None = None)
             "role": "system",
             "content": (
                 "You are an expert teacher assistant. "
-                "Answer the student's question using ONLY "
-                "the provided context from the textbook. "
-
+                "Use the conversation history to understand "
+                "follow-up questions and references like 'it' or 'they'. "
+                "Always ground your answer in the provided context "
+                "from the textbook. "
                 "Always cite sources using [Source N] notation. "
                 "Be clear, accurate, and educational."
             )

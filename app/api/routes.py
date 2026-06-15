@@ -231,6 +231,33 @@ async def list_uploads():
 
     return {"pdfs": pdfs}
 
+def _expand_query_with_history(query: str, history: list[dict]) -> str:
+    """Expand a short/follow-up query with last user question from history.
+
+    If the query is short (under 8 words) and history exists, prepend the
+    last user question to help Qdrant retrieval find relevant context.
+
+    Args:
+        query: Current user question.
+        history: Previous conversation turns as {role, content} dicts.
+
+    Returns:
+        Expanded query string, or original query unchanged.
+    """
+    if not history or len(query.split()) >= 8:
+        return query
+    last_user_q = None
+    for msg in reversed(history):
+        if msg.get("role") == "user":
+            last_user_q = msg.get("content", "")
+            break
+    if last_user_q:
+        expanded = f"{last_user_q} / {query}"
+        print(f"[routes] Expanded query: {expanded}")
+        return expanded
+    return query
+
+
 @router.post("/query", response_model=QueryResponse)
 async def query_pdf(request: QueryRequest) -> QueryResponse:
     """Answer a student question using the ingested textbooks."""
@@ -238,9 +265,11 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
         raise HTTPException(400, "Question cannot be empty.")
 
     try:
-        # Get embeddings for the query
         from app.ingestion.text_embedder import embed_query
-        query_emb = await embed_query(request.question)
+
+        # Expand short follow-up queries with conversation history
+        search_query = _expand_query_with_history(request.question, request.history)
+        query_emb = await embed_query(search_query)
 
         results = await retrieve_text_only(
             query_emb["dense_vector"],
@@ -274,9 +303,11 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
         history_list = []
 
     try:
-        # Get embeddings for the query
         from app.ingestion.text_embedder import embed_query
-        query_emb = await embed_query(question)
+
+        # Expand short follow-up queries with conversation history
+        search_query = _expand_query_with_history(question, history_list)
+        query_emb = await embed_query(search_query)
 
         results = await retrieve(
             query_emb["dense_vector"],

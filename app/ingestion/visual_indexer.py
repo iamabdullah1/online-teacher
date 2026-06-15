@@ -1,32 +1,21 @@
-"""Visual indexer — detects figures in PDF pages, crops them, generates Cohere descriptions, and stores in Qdrant visual_index collection."""
+"""Visual indexer — detects figures in PDF pages, crops them, generates text descriptions from page content, and stores in Qdrant visual_index collection."""
 
-import os
-import json
 import asyncio
-import base64
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Any
 
-import cohere
 import fitz
 from PIL import Image
 from dotenv import load_dotenv
 
 load_dotenv()
 
-COHERE_API_KEY = os.getenv("COHERE_API_KEY", "")
-COHERE_MODEL = "c4ai-aya-vision-32b"
 FIGURES_DIR = Path("data/processed/figures")
 MIN_FIGURE_WIDTH = 100
 MIN_FIGURE_HEIGHT = 100
-SIMILARITY_THRESHOLD = 0.65
 MAX_TOTAL_FIGURES = int(os.getenv("MAX_TOTAL_FIGURES", "8"))
-
-
-def _get_cohere_client() -> cohere.ClientV2:
-    """Get Cohere client."""
-    return cohere.ClientV2(api_key=COHERE_API_KEY)
 
 
 def extract_figures_from_page(
@@ -109,170 +98,66 @@ def extract_figures_from_page(
     return figures
 
 
-def _image_to_base64(image_path: str, max_size: int = 800) -> str:
-    """
-    Convert image to base64 with resizing.
-    Resizes to max_size on longest dimension before encoding.
-    Reduces token usage by 60-80% with no quality loss for descriptions.
-    
-    Args:
-        image_path: Path to image file.
-        max_size: Max pixels on longest dimension. Default 800.
-    
-    Returns:
-        Base64 encoded string.
-    """
-    img = Image.open(image_path).convert("RGB")
-    
-    # Resize if larger than max_size
-    w, h = img.size
-    if max(w, h) > max_size:
-        if w > h:
-            new_w = max_size
-            new_h = int(h * max_size / w)
-        else:
-            new_h = max_size
-            new_w = int(w * max_size / h)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-    
-    # Save to bytes
-    import io
-    buffer = io.BytesIO()
-    img.save(buffer, format="JPEG", quality=85)
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("utf-8")
+def _describe_from_page_text(figure: dict[str, Any], page_text: str = "", chapter: str = "", section_title: str = "") -> dict[str, Any]:
+    """Build a figure description from surrounding page content.
 
-
-async def describe_figure(
-    figure: dict[str, Any],
-    page_text: str = ""
-) -> dict[str, Any]:
-    """Generate rich description of a figure using Cohere.
+    Uses the page's chapter, section title, and nearby text to describe
+    what the figure likely shows — no Cohere vision API needed.
 
     Args:
         figure: Figure dict with figure_path and metadata.
         page_text: Surrounding text from the page for context.
+        chapter: Chapter heading from the page.
+        section_title: Section heading from the page.
 
     Returns:
         Figure dict with added keys:
-          - description: str (rich text description)
+          - description: str
           - keywords: list[str]
           - has_diagram: bool
           - has_table: bool
           - has_formula: bool
           - subject: str (main topic)
     """
-    try:
-        client = _get_cohere_client()
-        img_b64 = _image_to_base64(figure["figure_path"])
+    text_snippet = page_text[:600].strip() if page_text else ""
 
-        context = ""
-        if page_text:
-            context = f"\n\nSurrounding text context:\n{page_text[:500]}"
+    parts = []
+    if chapter:
+        parts.append(f"Chapter: {chapter}")
+    if section_title:
+        parts.append(f"Section: {section_title}")
+    if text_snippet:
+        parts.append(text_snippet)
 
-        prompt = f"""Analyze this figure from an educational textbook.
-{context}
+    description = " | ".join(parts) if parts else f"Figure on page {figure['page_num']}"
 
-Provide a detailed description in JSON format:
-{{
-    "description": "detailed description of what this figure shows",
-    "keywords": ["keyword1", "keyword2", "keyword3"],
-    "has_diagram": true/false,
-    "has_table": true/false,
-    "has_formula": true/false,
-    "subject": "main academic subject or topic shown"
-}}
+    # Use page text to detect content type
+    text_lower = text_snippet.lower()
+    has_diagram = any(w in text_lower for w in ["diagram", "figure", "graph", "chart", "plot", "schematic"])
+    has_table = any(w in text_lower for w in ["table", "tabular", "column"])
+    has_formula = any(w in text_lower for w in ["formula", "equation", "f=", "="])
 
-Be specific about visual elements: arrows, labels, structures,
-data, relationships. Return ONLY the JSON object."""
+    # Extract keywords from section title and page text
+    keywords = []
+    if section_title:
+        keywords = [w.strip().strip(".,:;!?") for w in section_title.split() if len(w) > 3]
+    if chapter:
+        chapter_keywords = [w.strip().strip(".,:;!?") for w in chapter.split() if len(w) > 3]
+        keywords = list(dict.fromkeys(chapter_keywords + keywords))
 
-        loop = asyncio.get_event_loop()
+    subject = chapter if chapter else (section_title if section_title else "general")
 
-        def _call():
-            response = client.chat(
-                model=COHERE_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{img_b64}"
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": prompt
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=500,
-                temperature=0.1
-            )
-            return response.message.content[0].text
-
-        try:
-            raw = await asyncio.wait_for(
-                loop.run_in_executor(None, _call),
-                timeout=15.0
-            )
-        except asyncio.TimeoutError:
-            print(f"[visual_indexer] Timeout on page {figure['page_num']} — skipping")
-            return {
-                **figure,
-                "description": f"Visual content on page {figure['page_num']}",
-                "keywords": [],
-                "has_diagram": True,
-                "has_table": False,
-                "has_formula": False,
-                "subject": "",
-                "indexed_at": datetime.utcnow().isoformat()
-            }
-
-        try:
-            raw = raw.strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            data = json.loads(raw.strip())
-        except Exception:
-            data = {
-                "description": raw[:500],
-                "keywords": [],
-                "has_diagram": True,
-                "has_table": False,
-                "has_formula": False,
-                "subject": "unknown"
-            }
-
-        return {
-            **figure,
-            "description": data.get("description", ""),
-            "keywords": data.get("keywords", []),
-            "has_diagram": data.get("has_diagram", False),
-            "has_table": data.get("has_table", False),
-            "has_formula": data.get("has_formula", False),
-            "subject": data.get("subject", ""),
-            "figure_filename": Path(figure["figure_path"]).name,
-            "ingested_at": datetime.utcnow().isoformat()
-        }
-
-    except Exception as e:
-        print(f"[visual_indexer] Description error: {e}")
-        return {
-            **figure,
-            "description": f"Figure on page {figure['page_num']}",
-            "keywords": [],
-            "has_diagram": False,
-            "has_table": False,
-            "has_formula": False,
-            "subject": "",
-            "figure_filename": Path(figure["figure_path"]).name,
-            "ingested_at": datetime.utcnow().isoformat()
-        }
+    return {
+        **figure,
+        "description": description[:800],
+        "keywords": keywords[:10],
+        "has_diagram": has_diagram,
+        "has_table": has_table,
+        "has_formula": has_formula,
+        "subject": subject,
+        "figure_filename": Path(figure["figure_path"]).name,
+        "ingested_at": datetime.utcnow().isoformat()
+    }
 
 
 async def index_pdf_figures(
@@ -286,7 +171,7 @@ async def index_pdf_figures(
         pages: List of page dicts from pdf_parser.extract_pages()
 
     Returns:
-        List of fully described figure dicts ready for Qdrant.
+        List of figure dicts with text-based descriptions ready for Qdrant.
     """
     print(f"[visual_indexer] Indexing figures in {pdf_path}")
     import time
@@ -305,30 +190,24 @@ async def index_pdf_figures(
     ]
     all_page_figures = await asyncio.gather(*extract_tasks)
 
-    figures_with_text = []
+    figures = []
     for page, page_figs in zip(pages, all_page_figures):
         page_text = page.get("text", "")
+        chapter = page.get("chapter", "")
+        section_title = page.get("section_title", "")
         for fig in page_figs:
-            figures_with_text.append((fig, page_text))
+            desc = _describe_from_page_text(fig, page_text, chapter, section_title)
+            figures.append(desc)
 
-    print(f"[visual_indexer] Extracted {len(figures_with_text)} figures in {time.time()-start:.1f}s")
+    print(f"[visual_indexer] Extracted {len(figures)} figures in {time.time()-start:.1f}s")
 
-    if not figures_with_text:
-        return []
+    # Cap total figures
+    if len(figures) > MAX_TOTAL_FIGURES:
+        print(f"[visual_indexer] Capping at {MAX_TOTAL_FIGURES} figures (found {len(figures)})")
+        figures = figures[:MAX_TOTAL_FIGURES]
 
-    # Cap total figures to avoid slow ingestion
-    if len(figures_with_text) > MAX_TOTAL_FIGURES:
-        print(f"[visual_indexer] Capping at {MAX_TOTAL_FIGURES} figures (found {len(figures_with_text)})")
-        figures_with_text = figures_with_text[:MAX_TOTAL_FIGURES]
-
-    desc_tasks = [
-        describe_figure(fig, text)
-        for fig, text in figures_with_text
-    ]
-    described = await asyncio.gather(*desc_tasks)
-
-    print(f"[visual_indexer] Total figures indexed: {len(described)} ({time.time()-start:.1f}s)")
-    return list(described)
+    print(f"[visual_indexer] Total figures indexed: {len(figures)} ({time.time()-start:.1f}s)")
+    return figures
 
 
 async def search_figures(
