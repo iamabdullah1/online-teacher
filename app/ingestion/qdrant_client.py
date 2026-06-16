@@ -48,27 +48,35 @@ def _get_client() -> QdrantClient:
     return _client
 
 
-async def _ensure_collection_dims(client, collection_name: str) -> None:
-    """Drop and recreate a collection if its vector dimension doesn't match DENSE_DIM."""
+async def _ensure_collection_dims(client, collection_name: str) -> bool:
+    """Return True if collection exists with correct dim, else delete and return False."""
     loop = asyncio.get_event_loop()
     try:
         info = await loop.run_in_executor(
             None, lambda: client.get_collection(collection_name)
         )
-        actual_dim = info.config.params.vectors.size
-        if actual_dim != DENSE_DIM:
-            print(
-                f"[qdrant_client] Collection {collection_name} has dim={actual_dim}, "
-                f"expected {DENSE_DIM}. Recreating..."
-            )
-            await loop.run_in_executor(
-                None, lambda: client.delete_collection(collection_name)
-            )
-            # will be recreated below
-            return False
-        return True
+        vectors_config = info.config.params.vectors
+        # vectors_config can be a VectorParams (unnamed) or dict of name -> VectorParams
+        if isinstance(vectors_config, dict):
+            actual_dim = vectors_config[DENSE_VECTOR_NAME].size
+        else:
+            actual_dim = vectors_config.size
+        if actual_dim == DENSE_DIM:
+            return True
+        print(
+            f"[qdrant_client] Collection {collection_name} has dim={actual_dim}, "
+            f"expected {DENSE_DIM}. Deleting..."
+        )
+    except Exception as e:
+        print(f"[qdrant_client] Could not inspect {collection_name}: {e}")
+    # Delete (ignore if already gone)
+    try:
+        await loop.run_in_executor(
+            None, lambda: client.delete_collection(collection_name)
+        )
     except Exception:
-        return False
+        pass
+    return False
 
 
 async def _create_text_collection(client) -> None:
