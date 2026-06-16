@@ -215,7 +215,7 @@ async def search_figures(
     source_pdf: str,
     limit: int = 3
 ) -> list[dict[str, Any]]:
-    """Search indexed figures by text query using BGE-M3.
+    """Search indexed figures by text query using MiniLM.
 
     Args:
         query: Search query (e.g. slide title)

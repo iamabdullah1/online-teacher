@@ -79,8 +79,7 @@ def test_query_endpoint():
          patch("app.generation.generator.generate_answer", new_callable=AsyncMock) as mock_gen:
 
         mock_embed.return_value = {
-            "dense_vector": [0.1] * 1024,
-            "sparse_vector": {101: 0.8}
+            "dense_vector": [0.1] * 384,
         }
         mock_retrieve.return_value = []
         mock_gen.return_value = MOCK_ANSWER_RESULT
@@ -109,8 +108,7 @@ def test_query_response_has_required_keys():
          patch("app.generation.generator.generate_answer", new_callable=AsyncMock) as mock_gen:
 
         mock_embed.return_value = {
-            "dense_vector": [0.1] * 1024,
-            "sparse_vector": {101: 0.8}
+            "dense_vector": [0.1] * 384,
         }
         mock_retrieve.return_value = []
         mock_gen.return_value = MOCK_ANSWER_RESULT

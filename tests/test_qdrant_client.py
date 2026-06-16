@@ -23,8 +23,7 @@ def cleanup():
 
 SAMPLE_TEXT_CHUNK = {
     "chunk": "Newton's second law: F = ma",
-    "dense_vector": [0.1] * 1024,
-    "sparse_vector": {101: 0.8, 202: 0.6, 303: 0.4},
+    "dense_vector": [0.1] * 384,
     "page_num": 1,
     "source_pdf": "physics.pdf",
     "chunk_index": 0,
@@ -62,7 +61,7 @@ async def test_search_text_returns_results():
     """Test that search_text returns results with expected keys."""
     await qc.init_collections()
     await qc.upsert_text_chunks([SAMPLE_TEXT_CHUNK])
-    results = await qc.search_text([0.1] * 1024, {101: 0.8}, limit=1)
+    results = await qc.search_text([0.1] * 384, limit=1)
     assert len(results) == 1
     assert "chunk" in results[0]
     assert "score" in results[0]
@@ -72,7 +71,7 @@ async def test_search_text_result_keys():
     """Test that search_text results have all required keys."""
     await qc.init_collections()
     await qc.upsert_text_chunks([SAMPLE_TEXT_CHUNK])
-    results = await qc.search_text([0.1] * 1024, {101: 0.8}, limit=1)
+    results = await qc.search_text([0.1] * 384, limit=1)
     result = results[0]
     assert "chunk" in result
     assert "page_num" in result
@@ -91,7 +90,7 @@ async def test_search_text_returns_chapter_metadata():
     """Test that search_text returns chapter and section_title."""
     await qc.init_collections()
     await qc.upsert_text_chunks([SAMPLE_TEXT_CHUNK])
-    results = await qc.search_text([0.1] * 1024, {101: 0.8}, limit=1)
+    results = await qc.search_text([0.1] * 384, limit=1)
     assert "chapter" in results[0]
     assert "section_title" in results[0]
     assert results[0]["chapter"] == "Chapter 1"

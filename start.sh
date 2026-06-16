@@ -49,14 +49,14 @@ echo "   ✅ Qdrant is ready"
 echo "→ Activating virtual environment..."
 source ~/online-teacher/.venv/bin/activate
 
-# Step 5 — Preload BGE-M3 model before first request
-echo "→ Preloading BGE-M3 model (one-time, ~3 minutes)..."
+# Step 5 — Preload MiniLM model before first request
+echo "→ Preloading MiniLM model (one-time, ~5 seconds)..."
 python3 -c "
-from FlagEmbedding import BGEM3FlagModel
-print('Loading BGE-M3...')
-model = BGEM3FlagModel('BAAI/bge-m3', use_fp16=True)
-print('BGE-M3 ready.')
-" && echo "   ✅ BGE-M3 preloaded"
+from sentence_transformers import SentenceTransformer
+print('Loading all-MiniLM-L6-v2...')
+model = SentenceTransformer('all-MiniLM-L6-v2')
+print('MiniLM ready.')
+" && echo "   ✅ MiniLM preloaded"
 
 # Step 6 — Start main app
 echo "→ Starting main app on port 8000..."

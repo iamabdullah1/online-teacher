@@ -63,7 +63,7 @@ async def _find_figures_for_slides(
 ) -> list[str | None]:
     """Pre-compute best figure paths for all slides concurrently.
 
-    Batch-embeds all slide titles in one BGE-M3 call and searches
+    Batch-embeds all slide titles in one MiniLM call and searches
     Qdrant for all slides in parallel.
 
     Args:

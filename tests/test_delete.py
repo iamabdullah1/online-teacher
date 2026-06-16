@@ -16,8 +16,7 @@ def reset_qdrant_client():
 
 SAMPLE_TEXT_CHUNK = {
     "chunk": "Newton's second law: F = ma",
-    "dense_vector": [0.1] * 1024,
-    "sparse_vector": {101: 0.8, 202: 0.6, 303: 0.4},
+    "dense_vector": [0.1] * 384,
     "page_num": 1,
     "source_pdf": "test_delete.pdf",
     "chunk_index": 0,
@@ -40,7 +39,7 @@ SAMPLE_FIGURE = {
     "page_num": 1,
     "figure_index": 0,
     "figure_filename": "page_0001_fig_00.png",
-    "dense_vector": [0.1] * 1024,
+    "dense_vector": [0.1] * 384,
     "doc_id": "abc123",
     "ingested_at": "2026-01-01T00:00:00",
 }

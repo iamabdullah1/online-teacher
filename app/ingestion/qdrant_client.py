@@ -6,12 +6,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     VectorParams,
     Distance,
-    SparseVectorParams,
-    SparseIndexParams,
     PointStruct,
-    SparseVector,
-    NamedVector,
-    SearchRequest,
     Filter,
     FieldCondition,
     MatchValue,
@@ -23,9 +18,8 @@ load_dotenv()
 QDRANT_URL = os.getenv("QDRANT_URL", "")
 TEXT_COLLECTION = "text_chunks"
 FIGURES_COLLECTION = "visual_index"
-DENSE_DIM = 1024
+DENSE_DIM = 384
 DENSE_VECTOR_NAME = "dense"
-SPARSE_VECTOR_NAME = "sparse"
 
 _client: QdrantClient | None = None
 
@@ -72,11 +66,6 @@ async def init_collections() -> None:
                         distance=Distance.COSINE,
                     )
                 },
-                sparse_vectors_config={
-                    SPARSE_VECTOR_NAME: SparseVectorParams(
-                        index=SparseIndexParams(on_disk=False)
-                    )
-                },
             ),
         )
         print(f"[qdrant_client] Created collection: {TEXT_COLLECTION}")
@@ -118,7 +107,7 @@ async def init_collections() -> None:
 
 
 async def upsert_text_chunks(chunks: list[dict]) -> int:
-    """Insert text chunks with dense and sparse vectors into Qdrant.
+    """Insert text chunks with dense vectors into Qdrant.
 
     Args:
         chunks: List of dicts from text_embedder.embed_chunks()
@@ -136,10 +125,6 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
             id=abs(hash(chunk["chunk"])) % (2**63),
             vector={
                 DENSE_VECTOR_NAME: chunk["dense_vector"],
-                SPARSE_VECTOR_NAME: SparseVector(
-                    indices=list(chunk["sparse_vector"].keys()),
-                    values=list(chunk["sparse_vector"].values()),
-                ),
             },
             payload={
                 "chunk": chunk["chunk"],
@@ -167,14 +152,12 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
 
 async def search_text(
     dense_vector: list[float],
-    sparse_vector: dict[int, float],
     limit: int = 5,
 ) -> list[dict]:
     """Search text_chunks collection using dense vector.
 
     Args:
         dense_vector: Query dense vector from text_embedder
-        sparse_vector: Query sparse vector from text_embedder
         limit: Number of results to return
 
     Returns:
@@ -217,7 +200,7 @@ async def upsert_figures(figures: list[dict]) -> int:
     Args:
         figures: List of figure dicts from visual_indexer
                  with description, keywords, figure_path etc.
-                 Must also include dense_vector from BGE-M3.
+                 Must also include dense_vector from MiniLM.
 
     Returns:
         Number of figures upserted.
@@ -270,7 +253,7 @@ async def search_figures_collection(
     """Search visual_index collection for matching figures.
 
     Args:
-        dense_vector: Query dense vector from BGE-M3.
+        dense_vector: Query dense vector from MiniLM.
         source_pdf: PDF filename to filter by.
         limit: Max results.
 

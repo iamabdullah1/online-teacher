@@ -297,7 +297,6 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
 
         results = await retrieve_text_only(
             query_emb["dense_vector"],
-            query_emb["sparse_vector"],
             limit=request.limit
         )
 
@@ -336,7 +335,6 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
 
         results = await retrieve(
             query_emb["dense_vector"],
-            query_emb["sparse_vector"],
             limit=5
         )
 

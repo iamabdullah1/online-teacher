@@ -140,8 +140,7 @@ async def test_search_figures_returns_list():
         with patch("app.ingestion.text_embedder.embed_query",
                    new_callable=AsyncMock) as mock_embed:
             mock_embed.return_value = {
-                "dense_vector": [0.1] * 1024,
-                "sparse_vector": {}
+                "dense_vector": [0.1] * 384,
             }
             mock_search.return_value = [{
                 "figure_path": "/fake/path.png",

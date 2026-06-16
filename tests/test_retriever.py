@@ -32,35 +32,30 @@ class TestRetrieve:
 
     @pytest.fixture
     def sample_dense(self):
-        """Sample dense vector (1024-dim)."""
-        return [0.1] * 1024
+        """Sample dense vector (384-dim)."""
+        return [0.1] * 384
 
-    @pytest.fixture
-    def sample_sparse(self):
-        """Sample sparse vector."""
-        return {101: 0.8, 202: 0.6}
-
-    async def test_returns_list(self, sample_dense, sample_sparse):
+    async def test_returns_list(self, sample_dense):
         """Test retrieve returns a list."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
             mock_qc.search_text = AsyncMock(return_value=[])
             from app.retrieval.retriever import retrieve
-            result = await retrieve(sample_dense, sample_sparse)
+            result = await retrieve(sample_dense)
             assert isinstance(result, list)
 
     async def test_returns_text_results(
-        self, sample_dense, sample_sparse, mock_text_results
+        self, sample_dense, mock_text_results
     ):
         """Test retrieve returns text results."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
             mock_qc.search_text = AsyncMock(return_value=mock_text_results)
             from app.retrieval.retriever import retrieve
-            result = await retrieve(sample_dense, sample_sparse)
+            result = await retrieve(sample_dense)
             assert len(result) == 2
 
-    async def test_respects_limit(self, sample_dense, sample_sparse):
+    async def test_respects_limit(self, sample_dense):
         """Test limit param is respected."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
@@ -71,18 +66,18 @@ class TestRetrieve:
             ]
             mock_qc.search_text = AsyncMock(return_value=many_text[:5])
             from app.retrieval.retriever import retrieve
-            result = await retrieve(sample_dense, sample_sparse, limit=5)
+            result = await retrieve(sample_dense, limit=5)
             assert len(result) == 5
 
     async def test_result_has_required_keys(
-        self, sample_dense, sample_sparse, mock_text_results
+        self, sample_dense, mock_text_results
     ):
         """Test result items have required keys."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
             mock_qc.search_text = AsyncMock(return_value=mock_text_results)
             from app.retrieval.retriever import retrieve
-            result = await retrieve(sample_dense, sample_sparse)
+            result = await retrieve(sample_dense)
             assert "chunk" in result[0]
             assert "score" in result[0]
 
@@ -93,33 +88,27 @@ class TestRetrieveTextOnly:
     @pytest.fixture
     def sample_dense(self):
         """Sample dense vector."""
-        return [0.1] * 1024
-
-    @pytest.fixture
-    def sample_sparse(self):
-        """Sample sparse vector."""
-        return {101: 0.8}
+        return [0.1] * 384
 
     async def test_returns_text_results(
-        self, sample_dense, sample_sparse, mock_text_results
+        self, sample_dense, mock_text_results
     ):
         """Test text-only returns text results."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
             mock_qc.search_text = AsyncMock(return_value=mock_text_results)
             from app.retrieval.retriever import retrieve_text_only
-            result = await retrieve_text_only(sample_dense, sample_sparse)
+            result = await retrieve_text_only(sample_dense)
             assert len(result) == 2
             assert "chunk" in result[0]
 
-    async def test_uses_limit_param(self, sample_dense, sample_sparse):
+    async def test_uses_limit_param(self, sample_dense):
         """Test limit parameter is passed to search."""
         with patch("app.retrieval.retriever.qc") as mock_qc:
             mock_qc.init_collections = AsyncMock()
             mock_qc.search_text = AsyncMock(return_value=[])
             from app.retrieval.retriever import retrieve_text_only
-            await retrieve_text_only(sample_dense, sample_sparse, limit=5)
+            await retrieve_text_only(sample_dense, limit=5)
             mock_qc.search_text.assert_called_once()
             call_args = mock_qc.search_text.call_args
-            assert call_args[0][1] == {101: 0.8}
             assert call_args[1]["limit"] == 5

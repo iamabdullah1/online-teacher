@@ -107,7 +107,6 @@ async def ingest_pdf(pdf_path: str) -> dict:
         t3 = time.time()
         for i, emb in enumerate(embeddings):
             all_chunks[i]["dense_vector"] = emb["dense_vector"]
-            all_chunks[i]["sparse_vector"] = emb["sparse_vector"]
 
         # Add source_pdf to figures and attach embeddings
         pdf_name = str(Path(pdf_path).name)
