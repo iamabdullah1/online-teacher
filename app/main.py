@@ -10,18 +10,24 @@ from app.api.routes import router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Preload models on startup."""
-    print("[startup] Preloading BGE-M3 model...")
-    try:
-        from app.ingestion.text_embedder import _get_model
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _get_model)
-        print("[startup] BGE-M3 ready")
-    except Exception as e:
-        print(f"[startup] BGE-M3 preload failed: {e}")
+    """Preload models on startup in background."""
+    print("[startup] Starting BGE-M3 model preload in background...")
+
+    async def _preload_model():
+        try:
+            from app.ingestion.text_embedder import _get_model
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _get_model)
+            print("[startup] BGE-M3 ready")
+        except Exception as e:
+            print(f"[startup] BGE-M3 preload failed (will load on first request): {e}")
+
+    # Fire-and-forget: don't block startup on model loading
+    task = asyncio.create_task(_preload_model())
 
     yield
 
+    task.cancel()
     print("[shutdown] Shutting down...")
 
 

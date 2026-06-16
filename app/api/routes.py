@@ -231,6 +231,30 @@ async def list_uploads():
 
     return {"pdfs": pdfs}
 
+def _format_error(error: Exception) -> str:
+    """Format an exception into a clean user-facing message.
+
+    Handles Cohere API errors (429 rate limit, 401 auth, etc.)
+    and generic exceptions.
+    """
+    error_str = str(error)
+    # Cohere API errors contain HTTP headers + body — extract just the message
+    if hasattr(error, "status_code") and hasattr(error, "body"):
+        code = error.status_code
+        body = error.body if isinstance(error.body, dict) else {}
+        msg = body.get("message", "") if body else ""
+        if code == 429:
+            return "Rate limited by AI service. Please wait a moment and try again."
+        elif code == 401:
+            return "AI service authentication failed. Check API key."
+        elif code == 500:
+            return "AI service error. Please try again."
+        elif msg:
+            return f"AI service error ({code}): {msg[:200]}"
+    # Generic fallback
+    return error_str[:300]
+
+
 def _expand_query_with_history(query: str, history: list[dict]) -> str:
     """Expand a short/follow-up query with last user question from history.
 
@@ -280,13 +304,14 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
         answer = await generate_answer(request.question, results, history=request.history)
         return QueryResponse(**answer)
     except Exception as e:
-        print(f"[routes] Error in query_pdf: {e}")
+        err_msg = _format_error(e)
+        print(f"[routes] Error in query_pdf: {err_msg}")
         return QueryResponse(
             answer="",
             sources=[],
             context_used=0,
             status="error",
-            error=str(e)
+            error=err_msg
         )
 
 
@@ -320,8 +345,9 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
                 async for token in generate_answer_stream(question, results, history=history_list):
                     yield f"data: {token}\n\n"
             except Exception as e:
-                print(f"[routes] Error in stream: {e}")
-                yield f"data: [ERROR] {e}\n\n"
+                err_msg = _format_error(e)
+                print(f"[routes] Error in stream: {err_msg}")
+                yield f"data: [ERROR] {err_msg}\n\n"
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -329,9 +355,10 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
             media_type="text/event-stream"
         )
     except Exception as e:
-        print(f"[routes] Error in query_stream: {e}")
+        err_msg = _format_error(e)
+        print(f"[routes] Error in query_stream: {err_msg}")
         async def error_generator():
-            yield f"data: [ERROR] {e}\n\n"
+            yield f"data: [ERROR] {err_msg}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(
             error_generator(),
