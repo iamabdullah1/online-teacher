@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
 from app.ingestion.ingestion_pipeline import ingest_pdf
+from app.ingestion.cloudinary_storage import download_pdf
 from app.retrieval.retriever import retrieve, retrieve_text_only
 from app.generation.generator import generate_answer, generate_answer_stream
 from app.generation.slide_generator import generate_slides
@@ -63,6 +64,13 @@ class DeleteResponse(BaseModel):
     error: str | None
 
 
+class CloudinaryUploadRequest(BaseModel):
+    """Request model for Cloudinary-based PDF upload."""
+    cloudinary_pdf_id: str
+    cloudinary_url: str
+    filename: str
+
+
 class SlideRequest(BaseModel):
     """Request model for slide generation."""
     source_pdf: str
@@ -106,6 +114,34 @@ async def upload_pdf(file: UploadFile = File(...)) -> IngestResponse:
         f.write(contents)
 
     result = await ingest_pdf(str(save_path))
+    return IngestResponse(**result)
+
+
+@router.get("/cloudinary-config")
+async def cloudinary_config():
+    """Return public Cloudinary config for frontend uploads."""
+    return {
+        "cloudName": os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+        "uploadPreset": os.getenv("CLOUDINARY_UPLOAD_PRESET", ""),
+    }
+
+
+@router.post("/upload/cloudinary", response_model=IngestResponse)
+async def upload_pdf_from_cloudinary(req: CloudinaryUploadRequest) -> IngestResponse:
+    """Download a PDF from Cloudinary and ingest it.
+
+    The frontend uploads directly to Cloudinary (bypassing HF proxy limits),
+    then sends back the public_id and URL for backend ingestion.
+    """
+    suffix = Path(req.filename).suffix.lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        raise HTTPException(400, "Only PDF files are accepted.")
+
+    save_path = download_pdf(req.cloudinary_url, req.filename)
+    if not save_path:
+        raise HTTPException(502, "Failed to download PDF from Cloudinary.")
+
+    result = await ingest_pdf(save_path)
     return IngestResponse(**result)
 
 

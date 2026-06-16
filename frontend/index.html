@@ -848,7 +848,9 @@
             qaHistory: [],
             generatedSlides: null,
             selectedDepth: 'detailed',
-            selectedStyle: 'academic'
+            selectedStyle: 'academic',
+            cloudName: null,
+            uploadPreset: null
         };
 
         // DOM Elements
@@ -1060,51 +1062,18 @@
             uploadProgress.style.display = 'block';
             progressFill.style.width = '0%';
 
-            const formData = new FormData();
-            formData.append('file', selectedFile);
+            const isLarge = selectedFile.size > 25 * 1024 * 1024;
+            const canUseCloudinary = state.cloudName && state.uploadPreset;
 
             try {
-                progressStatus.innerHTML = '<span class="spinner"></span>Uploading...';
-                progressFill.style.width = '20%';
-
-                const response = await fetch(`${API_BASE}/upload`, {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
-
-                progressStatus.textContent = 'Extracting pages...';
-                progressFill.style.width = '40%';
-
-                const data = await response.json();
-
-                progressStatus.textContent = 'Building search index...';
-                progressFill.style.width = '70%';
-
-                // Wait for indexing to complete
-                await new Promise(resolve => setTimeout(resolve, 500));
-
-                progressFill.style.width = '100%';
-                progressStatus.textContent = `✓ Ready — ${data.total_pages} pages indexed`;
-
-                state.uploadedBook = {
-                    name: selectedFile.name,
-                    pages: data.total_pages,
-                    chunks: data.text_chunks_stored,
-                    figures: data.figures_stored
-                };
-                state.currentPdfName = selectedFile.name;
-
-                bookTitle.textContent = selectedFile.name.replace('.pdf', '').replace(/_/g, ' ');
-                bookStats.textContent = `${data.total_pages} pages · ${data.text_chunks_stored} chunks · ${data.figures_stored || 0} figures`;
-                bookCard.style.display = 'flex';
-
-                await loadUploadedBooks();
-                updateUI();
+                if (isLarge && canUseCloudinary) {
+                    await uploadViaCloudinary(selectedFile);
+                } else {
+                    await uploadDirect(selectedFile);
+                }
             } catch (err) {
                 console.error(err);
-                if (err.message.includes('connection')) {
+                if (err.message.includes('connection') || err.message.includes('NetworkError')) {
                     showError('Backend not running — start the server first');
                 } else {
                     showError(err.message);
@@ -1113,6 +1082,134 @@
                 state.isUploading = false;
                 uploadBtn.disabled = false;
             }
+        }
+
+        async function uploadViaCloudinary(file) {
+            return new Promise((resolve, reject) => {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('upload_preset', state.uploadPreset);
+
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', `https://api.cloudinary.com/v1_1/${state.cloudName}/auto/upload`);
+
+                xhr.upload.onprogress = (e) => {
+                    if (e.lengthComputable) {
+                        const pct = Math.round((e.loaded / e.total) * 60);
+                        progressFill.style.width = pct + '%';
+                        progressStatus.innerHTML = `<span class="spinner"></span>Uploading to Cloudinary... ${pct}%`;
+                    }
+                };
+
+                xhr.onload = async function () {
+                    if (xhr.status !== 200) {
+                        try {
+                            const err = JSON.parse(xhr.responseText);
+                            reject(new Error(err.error?.message || `Cloudinary upload failed: ${xhr.status}`));
+                        } catch {
+                            reject(new Error(`Cloudinary upload failed: ${xhr.status}`));
+                        }
+                        return;
+                    }
+
+                    let cloudResult;
+                    try {
+                        cloudResult = JSON.parse(xhr.responseText);
+                    } catch {
+                        reject(new Error('Invalid response from Cloudinary'));
+                        return;
+                    }
+
+                    progressStatus.textContent = 'Processing PDF on server...';
+                    progressFill.style.width = '65%';
+
+                    try {
+                        const resp = await fetch(`${API_BASE}/upload/cloudinary`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                cloudinary_pdf_id: cloudResult.public_id,
+                                cloudinary_url: cloudResult.secure_url,
+                                filename: file.name
+                            })
+                        });
+
+                        if (!resp.ok) {
+                            const errData = await resp.json().catch(() => ({}));
+                            throw new Error(errData.detail || `Server processing failed: ${resp.status}`);
+                        }
+
+                        const data = await resp.json();
+
+                        progressFill.style.width = '100%';
+                        progressStatus.textContent = `✓ Ready — ${data.total_pages} pages indexed`;
+
+                        state.uploadedBook = {
+                            name: file.name,
+                            pages: data.total_pages,
+                            chunks: data.text_chunks_stored,
+                            figures: data.figures_stored
+                        };
+                        state.currentPdfName = file.name;
+
+                        bookTitle.textContent = file.name.replace('.pdf', '').replace(/_/g, ' ');
+                        bookStats.textContent = `${data.total_pages} pages · ${data.text_chunks_stored} chunks · ${data.figures_stored || 0} figures`;
+                        bookCard.style.display = 'flex';
+
+                        await loadUploadedBooks();
+                        updateUI();
+                        resolve();
+                    } catch (err) {
+                        reject(err);
+                    }
+                };
+
+                xhr.onerror = () => reject(new Error('NetworkError uploading to Cloudinary'));
+                xhr.send(formData);
+            });
+        }
+
+        async function uploadDirect(file) {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            progressStatus.innerHTML = '<span class="spinner"></span>Uploading...';
+            progressFill.style.width = '20%';
+
+            const response = await fetch(`${API_BASE}/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) throw new Error(`Upload failed: ${response.status}`);
+
+            progressStatus.textContent = 'Extracting pages...';
+            progressFill.style.width = '40%';
+
+            const data = await response.json();
+
+            progressStatus.textContent = 'Building search index...';
+            progressFill.style.width = '70%';
+
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            progressFill.style.width = '100%';
+            progressStatus.textContent = `✓ Ready — ${data.total_pages} pages indexed`;
+
+            state.uploadedBook = {
+                name: file.name,
+                pages: data.total_pages,
+                chunks: data.text_chunks_stored,
+                figures: data.figures_stored
+            };
+            state.currentPdfName = file.name;
+
+            bookTitle.textContent = file.name.replace('.pdf', '').replace(/_/g, ' ');
+            bookStats.textContent = `${data.total_pages} pages · ${data.text_chunks_stored} chunks · ${data.figures_stored || 0} figures`;
+            bookCard.style.display = 'flex';
+
+            await loadUploadedBooks();
+            updateUI();
         }
 
         // Q&A
@@ -1344,6 +1441,7 @@
 
         // Initial load
         loadUploadedBooks();
+        loadCloudinaryConfig();
         updateUI();
     </script>
 </body>

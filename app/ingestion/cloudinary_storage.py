@@ -93,21 +93,38 @@ def download_figure(url: str, filename: str) -> str | None:
     Returns:
         Local file path string, or None on failure.
     """
+    return _download_file(url, filename, TEMP_DOWNLOAD_DIR)
+
+
+def download_pdf(cloudinary_url: str, filename: str, target_dir: str | Path = "data/uploads") -> str | None:
+    """Download a PDF from Cloudinary to a local directory for ingestion.
+
+    Args:
+        cloudinary_url: Cloudinary secure_url of the uploaded PDF.
+        filename: Original PDF filename (e.g. book.pdf).
+        target_dir: Directory to save the downloaded PDF.
+
+    Returns:
+        Local file path string, or None on failure.
+    """
+    return _download_file(cloudinary_url, filename, Path(target_dir))
+
+
+def _download_file(url: str, filename: str, target_dir: Path) -> str | None:
+    """Download a file from a URL to a local directory."""
     if not url:
         return None
 
     import requests
 
-    TEMP_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    local_path = TEMP_DOWNLOAD_DIR / filename
-
-    if local_path.exists():
-        return str(local_path)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    local_path = target_dir / filename
 
     try:
-        resp = requests.get(url, timeout=30)
+        resp = requests.get(url, timeout=120)
         resp.raise_for_status()
         local_path.write_bytes(resp.content)
+        print(f"[cloudinary] Downloaded: {local_path}")
         return str(local_path)
     except Exception as e:
         print(f"[cloudinary] Download error: {e}")
