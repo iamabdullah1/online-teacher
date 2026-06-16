@@ -48,6 +48,83 @@ def _get_client() -> QdrantClient:
     return _client
 
 
+async def _ensure_collection_dims(client, collection_name: str) -> None:
+    """Drop and recreate a collection if its vector dimension doesn't match DENSE_DIM."""
+    loop = asyncio.get_event_loop()
+    try:
+        info = await loop.run_in_executor(
+            None, lambda: client.get_collection(collection_name)
+        )
+        actual_dim = info.config.params.vectors.size
+        if actual_dim != DENSE_DIM:
+            print(
+                f"[qdrant_client] Collection {collection_name} has dim={actual_dim}, "
+                f"expected {DENSE_DIM}. Recreating..."
+            )
+            await loop.run_in_executor(
+                None, lambda: client.delete_collection(collection_name)
+            )
+            # will be recreated below
+            return False
+        return True
+    except Exception:
+        return False
+
+
+async def _create_text_collection(client) -> None:
+    """Create text_chunks collection with payload index."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: client.create_collection(
+            collection_name=TEXT_COLLECTION,
+            vectors_config={
+                DENSE_VECTOR_NAME: VectorParams(
+                    size=DENSE_DIM,
+                    distance=Distance.COSINE,
+                )
+            },
+        ),
+    )
+    print(f"[qdrant_client] Created collection: {TEXT_COLLECTION}")
+    await loop.run_in_executor(
+        None,
+        lambda: client.create_payload_index(
+            collection_name=TEXT_COLLECTION,
+            field_name="source_pdf",
+            field_schema="keyword"
+        )
+    )
+    print(f"[qdrant_client] Created index: {TEXT_COLLECTION}.source_pdf")
+
+
+async def _create_figures_collection(client) -> None:
+    """Create visual_index collection with payload index."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(
+        None,
+        lambda: client.create_collection(
+            collection_name=FIGURES_COLLECTION,
+            vectors_config={
+                DENSE_VECTOR_NAME: VectorParams(
+                    size=DENSE_DIM,
+                    distance=Distance.COSINE
+                )
+            }
+        )
+    )
+    print(f"[qdrant_client] Created collection: {FIGURES_COLLECTION}")
+    await loop.run_in_executor(
+        None,
+        lambda: client.create_payload_index(
+            collection_name=FIGURES_COLLECTION,
+            field_name="source_pdf",
+            field_schema="keyword"
+        )
+    )
+    print(f"[qdrant_client] Created index: {FIGURES_COLLECTION}.source_pdf")
+
+
 async def init_collections() -> None:
     """Create text_chunks and visual_index collections if they do not exist."""
     loop = asyncio.get_event_loop()
@@ -55,55 +132,21 @@ async def init_collections() -> None:
     existing = await loop.run_in_executor(None, client.get_collections)
     existing_names = [c.name for c in existing.collections]
 
+    if TEXT_COLLECTION in existing_names:
+        valid = await _ensure_collection_dims(client, TEXT_COLLECTION)
+        if not valid:
+            existing_names.remove(TEXT_COLLECTION)
+
+    if FIGURES_COLLECTION in existing_names:
+        valid = await _ensure_collection_dims(client, FIGURES_COLLECTION)
+        if not valid:
+            existing_names.remove(FIGURES_COLLECTION)
+
     if TEXT_COLLECTION not in existing_names:
-        await loop.run_in_executor(
-            None,
-            lambda: client.create_collection(
-                collection_name=TEXT_COLLECTION,
-                vectors_config={
-                    DENSE_VECTOR_NAME: VectorParams(
-                        size=DENSE_DIM,
-                        distance=Distance.COSINE,
-                    )
-                },
-            ),
-        )
-        print(f"[qdrant_client] Created collection: {TEXT_COLLECTION}")
-        # Add payload index for filtering by source_pdf
-        await loop.run_in_executor(
-            None,
-            lambda: client.create_payload_index(
-                collection_name=TEXT_COLLECTION,
-                field_name="source_pdf",
-                field_schema="keyword"
-            )
-        )
-        print(f"[qdrant_client] Created index: {TEXT_COLLECTION}.source_pdf")
+        await _create_text_collection(client)
 
     if FIGURES_COLLECTION not in existing_names:
-        await loop.run_in_executor(
-            None,
-            lambda: client.create_collection(
-                collection_name=FIGURES_COLLECTION,
-                vectors_config={
-                    DENSE_VECTOR_NAME: VectorParams(
-                        size=DENSE_DIM,
-                        distance=Distance.COSINE
-                    )
-                }
-            )
-        )
-        print(f"[qdrant_client] Created collection: {FIGURES_COLLECTION}")
-        # Add payload index for filtering by source_pdf
-        await loop.run_in_executor(
-            None,
-            lambda: client.create_payload_index(
-                collection_name=FIGURES_COLLECTION,
-                field_name="source_pdf",
-                field_schema="keyword"
-            )
-        )
-        print(f"[qdrant_client] Created index: {FIGURES_COLLECTION}.source_pdf")
+        await _create_figures_collection(client)
 
 
 async def upsert_text_chunks(chunks: list[dict]) -> int:
