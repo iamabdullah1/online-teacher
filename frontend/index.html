@@ -1443,6 +1443,18 @@
         loadUploadedBooks();
         loadCloudinaryConfig();
         updateUI();
+
+        // Keep HF Space alive while this tab is open
+        // HF Spaces sleep after 24h inactivity; pinging every 50min prevents that
+        const HEARTBEAT_INTERVAL = 50 * 60 * 1000;
+        async function heartbeat() {
+            try {
+                await fetch(`${API_BASE}/health`);
+            } catch {
+                // silent — backend will recover on next real request
+            }
+        }
+        setInterval(heartbeat, HEARTBEAT_INTERVAL);
     </script>
 </body>
 </html>
