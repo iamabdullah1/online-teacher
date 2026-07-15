@@ -57,7 +57,7 @@ async def ingest_pdf(pdf_path: str) -> dict:
         # Calculate total chunks across all pages
         total_chunks = sum(len(p.get("chunks", [])) for p in pages)
 
-        text_pages = [p for p in pages if not p["is_visual"] and p["chunks"]]
+        text_pages = [p for p in pages if p["chunks"]]
         visual_pages_list = [p for p in pages if p["is_visual"] and p["image_path"]]
 
         # Build text chunks (only from text pages, no visual placeholder chunks)

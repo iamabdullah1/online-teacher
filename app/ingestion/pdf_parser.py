@@ -181,13 +181,13 @@ async def extract_pages(pdf_path: str) -> list[dict]:
                 None, _save_page_image, page, page_num + 1
             )
 
-            if is_visual or len(text.split()) < MIN_WORDS_FOR_TEXT_PAGE:
-                # Visual page: use screenshot for figure extraction
-                image_path = screenshot_path
-                chunks = []
-            else:
-                image_path = None
+            # Visual pages still produce text chunks if they have enough text
+            if len(text.split()) >= MIN_WORDS_FOR_TEXT_PAGE:
                 chunks = _chunk_text(text)
+            else:
+                chunks = []
+
+            image_path = screenshot_path if is_visual else None
 
             ingested_at = datetime.utcnow().isoformat()
             results.append({
