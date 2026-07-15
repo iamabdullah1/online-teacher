@@ -1,5 +1,6 @@
 """FastAPI routes for the Online Teacher Platform."""
 
+import asyncio
 import json
 import os
 import shutil
@@ -156,78 +157,91 @@ async def delete_pdf(filename: str):
         raise HTTPException(400, "Invalid filename.")
 
     pdf_path = Path("data/uploads") / filename
-    if not pdf_path.exists():
-        raise HTTPException(404, f"PDF not found: {filename}")
-
     files_deleted = 0
+    text_chunks_deleted = False
+    figures_deleted = False
 
     try:
-        pdf_path.unlink()
-        files_deleted += 1
-        print(f"[routes] Deleted PDF: {filename}")
+        # Delete the PDF file if it exists (may not exist on HF Space ephemeral storage)
+        try:
+            if pdf_path.exists():
+                pdf_path.unlink()
+                files_deleted += 1
+                print(f"[routes] Deleted PDF: {filename}")
+        except Exception as e:
+            print(f"[routes] Error deleting PDF: {e}")
+
+        # Collect Cloudinary public IDs before Qdrant delete
+        cloudinary_ids: list[str] = []
+        try:
+            from app.ingestion.qdrant_client import _get_client
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            client = _get_client()
+            loop = asyncio.get_event_loop()
+            scroll_result = await loop.run_in_executor(
+                None,
+                lambda: client.scroll(
+                    collection_name="visual_index",
+                    scroll_filter=Filter(
+                        must=[FieldCondition(key="source_pdf", match=MatchValue(value=filename))]
+                    ),
+                    with_payload=True,
+                    limit=200
+                )
+            )
+            for point in scroll_result[0]:
+                pid = point.payload.get("cloudinary_public_id", "")
+                if pid:
+                    cloudinary_ids.append(pid)
+        except Exception as e:
+            print(f"[routes] Error collecting Cloudinary IDs: {e}")
+
+        # Delete Cloudinary images
+        if cloudinary_ids:
+            from app.ingestion.cloudinary_storage import delete_figure
+            for pid in cloudinary_ids:
+                delete_figure(pid)
+            print(f"[routes] Deleted {len(cloudinary_ids)} Cloudinary images")
+
+        from app.ingestion.qdrant_client import delete_pdf_data
+        qdrant_result = await delete_pdf_data(filename)
+        text_chunks_deleted = qdrant_result["text_chunks_deleted"]
+        figures_deleted = qdrant_result["figures_deleted"]
+
+        # Clean up local figure files
+        figures_dir = Path("data/processed/figures")
+        if figures_dir.exists():
+            pdf_stem = Path(filename).stem
+            for fig_file in figures_dir.glob("page_*.png"):
+                try:
+                    if pdf_stem in fig_file.name:
+                        fig_file.unlink()
+                        files_deleted += 1
+                except Exception as e:
+                    print(f"[routes] Error deleting figure: {e}")
+
+        # Clean up local screenshots
+        images_dir = Path("data/processed/images")
+        if images_dir.exists():
+            pdf_stem = Path(filename).stem
+            for img_file in images_dir.glob("page_*.png"):
+                try:
+                    if pdf_stem in img_file.name:
+                        img_file.unlink()
+                        files_deleted += 1
+                except Exception as e:
+                    print(f"[routes] Error deleting screenshot: {e}")
+
     except Exception as e:
-        print(f"[routes] Error deleting PDF: {e}")
-
-    # Collect Cloudinary public IDs before Qdrant delete
-    cloudinary_ids: list[str] = []
-    try:
-        from app.ingestion.qdrant_client import _get_client
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        client = _get_client()
-        scroll_result = client.scroll(
-            collection_name="visual_index",
-            scroll_filter=Filter(
-                must=[FieldCondition(key="source_pdf", match=MatchValue(value=filename))]
-            ),
-            with_payload=True,
-            limit=200
-        )
-        for point in scroll_result[0]:
-            pid = point.payload.get("cloudinary_public_id", "")
-            if pid:
-                cloudinary_ids.append(pid)
-    except Exception as e:
-        print(f"[routes] Error collecting Cloudinary IDs: {e}")
-
-    # Delete Cloudinary images
-    if cloudinary_ids:
-        from app.ingestion.cloudinary_storage import delete_figure
-        for pid in cloudinary_ids:
-            delete_figure(pid)
-        print(f"[routes] Deleted {len(cloudinary_ids)} Cloudinary images")
-
-    from app.ingestion.qdrant_client import delete_pdf_data
-    qdrant_result = await delete_pdf_data(filename)
-
-    figures_dir = Path("data/processed/figures")
-    if figures_dir.exists():
-        pdf_stem = Path(filename).stem
-        for fig_file in figures_dir.glob("page_*.png"):
-            try:
-                if pdf_stem in fig_file.name:
-                    fig_file.unlink()
-                    files_deleted += 1
-            except Exception as e:
-                print(f"[routes] Error deleting figure: {e}")
-
-    images_dir = Path("data/processed/images")
-    if images_dir.exists():
-        pdf_stem = Path(filename).stem
-        for img_file in images_dir.glob("page_*.png"):
-            try:
-                if pdf_stem in img_file.name:
-                    img_file.unlink()
-                    files_deleted += 1
-            except Exception as e:
-                print(f"[routes] Error deleting screenshot: {e}")
+        print(f"[routes] Unexpected error during delete: {e}")
 
     return DeleteResponse(
         source_pdf=filename,
-        text_chunks_deleted=qdrant_result["text_chunks_deleted"],
-        figures_deleted=qdrant_result["figures_deleted"],
+        text_chunks_deleted=text_chunks_deleted,
+        figures_deleted=figures_deleted,
         files_deleted=files_deleted,
-        status="success",
-        error=None,
+        status="success" if text_chunks_deleted or figures_deleted else "partial",
+        error=None if text_chunks_deleted or figures_deleted else "Qdrant data may not have been fully removed",
     )
 
 
