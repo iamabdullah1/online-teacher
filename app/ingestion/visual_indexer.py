@@ -77,8 +77,17 @@ def extract_figures_from_page(
     drawings = page.get_drawings()
     if len(drawings) > 10:
         try:
+            rects = [d["rect"] for d in drawings if d.get("rect")]
+            if rects:
+                clip = rects[0]
+                for r in rects[1:]:
+                    clip |= r
+                clip &= page.rect
+            else:
+                clip = page.rect
+
             mat = fitz.Matrix(1.5, 1.5)
-            pix = page.get_pixmap(matrix=mat, alpha=False)
+            pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False)
             fig_filename = f"page_{page_num:04d}_drawing.png"
             fig_path = FIGURES_DIR / fig_filename
             pix.save(str(fig_path))
@@ -87,7 +96,7 @@ def extract_figures_from_page(
                 "figure_path": str(fig_path.resolve()),
                 "page_num": page_num,
                 "figure_index": 99,
-                "bbox": list(page.rect),
+                "bbox": list(clip),
                 "width": pix.width,
                 "height": pix.height
             })
