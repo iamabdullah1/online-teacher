@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -22,6 +23,23 @@ DENSE_DIM = 384
 DENSE_VECTOR_NAME = "dense"
 
 _client: QdrantClient | None = None
+
+
+def _point_id(*parts: str) -> int:
+    """Derive a stable point ID from content-identifying parts.
+
+    Unlike Python's built-in hash(), this is deterministic across
+    process restarts, so re-ingesting the same PDF overwrites its
+    existing points instead of creating duplicates.
+
+    Args:
+        *parts: Strings that uniquely identify the point.
+
+    Returns:
+        A stable non-negative integer ID.
+    """
+    key = "|".join(parts)
+    return int(hashlib.md5(key.encode()).hexdigest()[:16], 16)
 
 
 def _get_client() -> QdrantClient:
@@ -173,7 +191,11 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
     points = []
     for i, chunk in enumerate(chunks):
         point = PointStruct(
-            id=abs(hash(chunk["chunk"])) % (2**63),
+            id=_point_id(
+                chunk.get("source_pdf", ""),
+                str(chunk.get("page_num", 0)),
+                str(chunk.get("chunk_index", 0)),
+            ),
             vector={
                 DENSE_VECTOR_NAME: chunk["dense_vector"],
             },
@@ -204,24 +226,32 @@ async def upsert_text_chunks(chunks: list[dict]) -> int:
 async def search_text(
     dense_vector: list[float],
     limit: int = 5,
+    source_pdf: str | None = None,
 ) -> list[dict]:
     """Search text_chunks collection using dense vector.
 
     Args:
         dense_vector: Query dense vector from text_embedder
         limit: Number of results to return
+        source_pdf: If set, restrict results to this PDF filename only.
 
     Returns:
         List of dicts with chunk, page_num, source_pdf, chunk_index, score
     """
     loop = asyncio.get_event_loop()
     client = _get_client()
+    query_filter = (
+        Filter(must=[FieldCondition(key="source_pdf", match=MatchValue(value=source_pdf))])
+        if source_pdf
+        else None
+    )
     results = await loop.run_in_executor(
         None,
         lambda: client.query_points(
             collection_name=TEXT_COLLECTION,
             query=dense_vector,
             using=DENSE_VECTOR_NAME,
+            query_filter=query_filter,
             limit=limit,
         ),
     )
@@ -263,7 +293,7 @@ async def upsert_figures(figures: list[dict]) -> int:
     points = []
     for fig in figures:
         point = PointStruct(
-            id=abs(hash(fig["figure_path"])) % (2**63),
+            id=_point_id(fig.get("source_pdf", ""), fig.get("figure_filename", "")),
             vector={
                 DENSE_VECTOR_NAME: fig["dense_vector"]
             },

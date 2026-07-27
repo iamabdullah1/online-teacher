@@ -1257,7 +1257,7 @@
                 const historyParam = encodeURIComponent(JSON.stringify(recentHistory));
 
                 const response = await fetch(
-                    `${API_BASE}/query/stream?question=${encodeURIComponent(question)}&text_only=false&history=${historyParam}`
+                    `${API_BASE}/query/stream?question=${encodeURIComponent(question)}&text_only=false&history=${historyParam}&source_pdf=${encodeURIComponent(state.currentPdfName)}`
                 );
                 if (!response.ok) throw new Error(`Query failed: ${response.status}`);
 

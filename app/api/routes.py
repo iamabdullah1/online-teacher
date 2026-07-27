@@ -31,6 +31,7 @@ class QueryRequest(BaseModel):
     text_only: bool = False
     limit: int = 5
     history: list[dict] = []
+    source_pdf: str = ""
 
 
 class QueryResponse(BaseModel):
@@ -347,7 +348,8 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
 
         results = await retrieve_text_only(
             query_emb["dense_vector"],
-            limit=request.limit
+            limit=request.limit,
+            source_pdf=request.source_pdf or None
         )
 
         answer = await generate_answer(request.question, results, history=request.history)
@@ -365,7 +367,12 @@ async def query_pdf(request: QueryRequest) -> QueryResponse:
 
 
 @router.get("/query/stream")
-async def query_stream(question: str, text_only: bool = False, history: str = "[]"):
+async def query_stream(
+    question: str,
+    text_only: bool = False,
+    history: str = "[]",
+    source_pdf: str = "",
+):
     """Stream answer token by token using SSE."""
     if not question.strip():
         raise HTTPException(400, "Question cannot be empty.")
@@ -385,7 +392,8 @@ async def query_stream(question: str, text_only: bool = False, history: str = "[
 
         results = await retrieve(
             query_emb["dense_vector"],
-            limit=5
+            limit=5,
+            source_pdf=source_pdf or None
         )
 
         async def event_generator():
