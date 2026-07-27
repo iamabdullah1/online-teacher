@@ -17,7 +17,7 @@ from PIL import Image as PILImage
 import cohere
 
 from app.ingestion.text_embedder import embed_chunks
-from app.ingestion.qdrant_client import search_figures_collection
+from app.ingestion.qdrant_client import search_figures_collection, search_text
 
 load_dotenv()
 
@@ -278,6 +278,7 @@ Rules:
 async def _generate_slide_content(
     topic: dict[str, Any],
     chunks: list[dict[str, Any]],
+    source_pdf: str,
     bullets_per_slide: int,
     depth: str,
     style: str
@@ -286,7 +287,8 @@ async def _generate_slide_content(
 
     Args:
         topic: Topic dict with topic, chapter, key_concept
-        chunks: All chunks for context
+        chunks: All chunks for the document (fallback context)
+        source_pdf: PDF filename to scope semantic search to.
         bullets_per_slide: Number of bullet points
         depth: "summary" | "detailed" | "exam"
         style: "academic" | "simple" | "visual_hints"
@@ -294,23 +296,21 @@ async def _generate_slide_content(
     Returns:
         Dict with keys: title, bullets, chapter
     """
-    # Search for relevant chunks across entire document
-    topic_words = set(topic.get("topic", "").lower().split())
-    chapter_lower = topic.get("chapter", "").lower()
+    # Semantically search the document for chunks relevant to this topic
+    query = " ".join(filter(None, [
+        topic.get("chapter", ""), topic.get("topic", ""), topic.get("key_concept", "")
+    ]))
+    relevant = []
+    try:
+        query_emb = await embed_chunks([query])
+        search_results = await search_text(
+            query_emb[0]["dense_vector"], limit=5, source_pdf=source_pdf
+        )
+        relevant = [r for r in search_results if r.get("score", 0) >= 0.3]
+    except Exception as e:
+        print(f"[slide_generator] Semantic search error for '{query}': {e}")
 
-    scored = []
-    for c in chunks:
-        chunk_lower = c.get("chunk", "").lower()
-        chapter_match = chapter_lower and chapter_lower in c.get("chapter", "").lower()
-        word_matches = sum(1 for w in topic_words if w in chunk_lower and len(w) > 3)
-        score = word_matches + (3 if chapter_match else 0)
-        if score > 0:
-            scored.append((score, c))
-
-    scored.sort(key=lambda x: x[0], reverse=True)
-    relevant = [c for _, c in scored[:5]]
-
-    # Fallback: use evenly sampled chunks if no matches
+    # Fallback: use evenly sampled chunks if no strong semantic matches
     if not relevant:
         total = len(chunks)
         step = max(1, total // 5)
@@ -619,7 +619,7 @@ async def generate_slides(
             return results
 
         tasks = [
-            _generate_slide_content(topic, chunks, bullets_per_slide, depth, style)
+            _generate_slide_content(topic, chunks, source_pdf, bullets_per_slide, depth, style)
             for topic in topics
         ]
         slides_data = await _gather_in_batches(tasks, batch_size=5)                         
