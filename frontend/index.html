@@ -966,6 +966,17 @@
             updateUI();
         }
 
+        async function loadCloudinaryConfig() {
+            try {
+                const response = await fetch(API_BASE + '/cloudinary-config');
+                const data = await response.json();
+                state.cloudName = data.cloudName || null;
+                state.uploadPreset = data.uploadPreset || null;
+            } catch (e) {
+                console.error('Failed to load Cloudinary config:', e);
+            }
+        }
+
         async function loadUploadedBooks() {
             try {
                 const response = await fetch(API_BASE + '/uploads');
