@@ -149,8 +149,82 @@ def _extract_heading(page: fitz.Page) -> dict[str, str]:
     return {"chapter": chapter, "section_title": section_title}
 
 
+def _process_page(pdf_path: str, page_num: int) -> dict:
+    """Extract text, visual flag, heading, and screenshot for one page.
+
+    Opens its own PyMuPDF document handle so it can be safely run
+    concurrently across a thread pool.
+
+    Args:
+        pdf_path: Path to the PDF file.
+        page_num: 0-indexed page number.
+
+    Returns:
+        Dict of page data (see extract_pages docstring for shape).
+    """
+    ingested_at = datetime.utcnow().isoformat()
+    try:
+        doc = fitz.open(pdf_path)
+        try:
+            page = doc.load_page(page_num)
+            text = page.get_text()
+            text = _clean_text(text)
+            is_visual = _is_visual_page(page, text)
+            heading = _extract_heading(page)
+
+            # Only render a screenshot for visual pages — rendering is the
+            # most expensive step, and non-visual pages never use image_path.
+            screenshot_path = _save_page_image(page, page_num + 1) if is_visual else ""
+
+            # Visual pages still produce text chunks if they have enough text
+            if len(text.split()) >= MIN_WORDS_FOR_TEXT_PAGE:
+                chunks = _chunk_text(text)
+            else:
+                chunks = []
+
+            image_path = screenshot_path if is_visual else None
+
+            print(
+                f"[pdf_parser] Page {page_num}: "
+                f"{'visual' if is_visual else 'text'} | chunks: {len(chunks)}"
+            )
+            return {
+                "page_num": page_num,
+                "text": text,
+                "is_visual": is_visual,
+                "image_path": image_path,
+                "screenshot_path": screenshot_path,
+                "chunks": chunks,
+                "chunk_count": len(chunks),
+                "chapter": heading["chapter"],
+                "section_title": heading["section_title"],
+                "word_count": len(text.split()),
+                "ingested_at": ingested_at,
+            }
+        finally:
+            doc.close()
+    except Exception as e:
+        print(f"[pdf_parser] Warning: skipping page {page_num}: {e}")
+        return {
+            "page_num": page_num,
+            "text": "",
+            "is_visual": False,
+            "image_path": None,
+            "screenshot_path": "",
+            "chunks": [],
+            "chunk_count": 0,
+            "chapter": "",
+            "section_title": "",
+            "word_count": 0,
+            "ingested_at": ingested_at,
+        }
+
+
 async def extract_pages(pdf_path: str) -> list[dict]:
     """Extract pages from a PDF file, separating text and visual pages.
+
+    Pages are processed concurrently across a thread pool since
+    PyMuPDF calls are synchronous.
 
     Args:
         pdf_path: Path to the PDF file.
@@ -163,65 +237,16 @@ async def extract_pages(pdf_path: str) -> list[dict]:
     """
     try:
         doc = fitz.open(pdf_path)
+        page_count = doc.page_count
+        doc.close()
     except Exception:
         raise ValueError(f"Cannot open PDF at path: {pdf_path}")
-    print(f"[pdf_parser] Processing: {pdf_path} ({doc.page_count} pages)")
+    print(f"[pdf_parser] Processing: {pdf_path} ({page_count} pages)")
     loop = asyncio.get_event_loop()
-    results = []
-    for page_num in range(doc.page_count):
-        try:
-            page = doc.load_page(page_num)
-            text = page.get_text()
-            text = _clean_text(text)
-            is_visual = _is_visual_page(page, text)
-            heading = _extract_heading(page)
-
-            # Always save screenshot for all pages (for slides)
-            screenshot_path = await loop.run_in_executor(
-                None, _save_page_image, page, page_num + 1
-            )
-
-            # Visual pages still produce text chunks if they have enough text
-            if len(text.split()) >= MIN_WORDS_FOR_TEXT_PAGE:
-                chunks = _chunk_text(text)
-            else:
-                chunks = []
-
-            image_path = screenshot_path if is_visual else None
-
-            ingested_at = datetime.utcnow().isoformat()
-            results.append({
-                "page_num": page_num,
-                "text": text,
-                "is_visual": is_visual,
-                "image_path": image_path,
-                "screenshot_path": screenshot_path,
-                "chunks": chunks,
-                "chunk_count": len(chunks),
-                "chapter": heading["chapter"],
-                "section_title": heading["section_title"],
-                "word_count": len(text.split()),
-                "ingested_at": ingested_at,
-            })
-            print(
-                f"[pdf_parser] Page {page_num}: "
-                f"{'visual' if is_visual else 'text'} | chunks: {len(chunks)}"
-            )
-        except Exception as e:
-            print(f"[pdf_parser] Warning: skipping page {page_num}: {e}")
-            ingested_at = datetime.utcnow().isoformat()
-            results.append({
-                "page_num": page_num,
-                "text": "",
-                "is_visual": False,
-                "image_path": None,
-                "screenshot_path": "",
-                "chunks": [],
-                "chunk_count": 0,
-                "chapter": "",
-                "section_title": "",
-                "word_count": 0,
-                "ingested_at": ingested_at,
-            })
+    tasks = [
+        loop.run_in_executor(None, _process_page, pdf_path, page_num)
+        for page_num in range(page_count)
+    ]
+    results = await asyncio.gather(*tasks)
     print("[pdf_parser] Done.")
     return results
